@@ -20,9 +20,9 @@ jobs:
           CSC_KEY_PASSWORD: prototype-only-change-for-production
         shell: pwsh
         run: |
-          npm run dist:win 2>&1 | Tee-Object -FilePath build-windows.log
+          cmd /c "npm run dist:win > build-windows.log 2>&1"
           $code = $LASTEXITCODE
-          if ($code -ne 0) { Get-Content build-windows.log | Select-Object -Last 20 | ForEach-Object { Write-Output "::error::$_" } }
+          if ($code -ne 0) { Get-Content build-windows.log | Select-Object -Last 50 | ForEach-Object { Write-Output "::error::$_" } }
           exit $code
       - uses: actions/upload-artifact@v4
         if: always()
