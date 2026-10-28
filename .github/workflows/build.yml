@@ -21,7 +21,9 @@ jobs:
         shell: pwsh
         run: |
           npm run dist:win 2>&1 | Tee-Object -FilePath build-windows.log
-          exit $LASTEXITCODE
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { Get-Content build-windows.log | Select-Object -Last 20 | ForEach-Object { Write-Output "::error::$_" } }
+          exit $code
       - uses: actions/upload-artifact@v4
         if: always()
         with:
