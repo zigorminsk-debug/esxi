@@ -1,6 +1,6 @@
 {
-  "name": "mikrotik-lab", "version": "0.1.0", "description": "Учебник и стенд RouterOS", "main": "electron.cjs", "private": true,
-  "scripts": {"test": "node --test", "desktop": "electron .", "dist:win": "electron-builder --win nsis"},
+  "name": "mikrotik-lab", "version": "0.1.0", "description": "Учебник и стенд RouterOS", "author": "MikroTik Lab", "main": "electron.cjs", "private": true,
+  "scripts": {"test": "node --test", "desktop": "electron .", "dist:win": "electron-builder --win nsis --publish never"},
   "dependencies": {"@capacitor/core": "6.2.1", "@capacitor/android": "6.2.1"},
   "devDependencies": {"@capacitor/cli": "6.2.1", "electron": "33.4.11", "electron-builder": "25.1.8"},
   "build": {"appId": "by.mikrotiklab.guide", "productName": "MikroTik Lab", "files": ["src/**/*", "electron.cjs"], "win": {"target": "nsis"}, "nsis": {"oneClick": false, "allowToChangeInstallationDirectory": true}}
