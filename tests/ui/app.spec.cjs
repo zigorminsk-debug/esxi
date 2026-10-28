@@ -54,3 +54,20 @@ test('Local project persists across navigation and reload',async({page,context})
  await page.goto('/#lab');await page.locator('#host-ram').fill('64');await context.setOffline(true);
  await page.goto('/#commands').catch(()=>{});await context.setOffline(false);await page.goto('/#lab');await expect(page.locator('#host-ram')).toHaveValue('64');
 });
+test('Font size can be enlarged, persists and stays usable on mobile',async({page,isMobile})=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/#lab');
+ await page.locator('#font-size-button').click();
+ await expect(page.locator('#app-dialog')).toContainText('Размер шрифта');
+ await page.locator('#app-dialog [data-font-scale="150"]').click();
+ await expect(page.locator('html')).toHaveAttribute('data-font-scale','150');
+ await page.locator('#app-dialog [data-close-dialog]').first().click();
+ const size=await page.locator('.check-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+ expect(size).toBeGreaterThanOrEqual(16);
+ await page.reload();await expect(page.locator('html')).toHaveAttribute('data-font-scale','150');
+ await page.goto('/#settings');await expect(page.locator('[data-font-range]')).toHaveValue('150');
+ await page.locator('[data-font-scale="200"]').click();await expect(page.locator('html')).toHaveAttribute('data-font-scale','200');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
+ await page.goto('/#chapter/wan');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
+ expect(errors).toEqual([]);
+});
