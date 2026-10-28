@@ -60,7 +60,8 @@
     const wanSwitch = h.nics >= 3 ? 'vSwitch-WAN' : h.nics === 2 ? 'vSwitch-LAN' : 'vSwitch0';
     const vmSwitch = h.nics >= 2 ? 'vSwitch-LAN' : 'vSwitch0';
     const active = config.vms.filter(v => v.enabled);
-    const rows = active.map((v,i) => {
+    const rows = active.map(v => {
+      const i = config.vms.indexOf(v);
       const lan = v.mode === 'isolated' ? 100 + i : 10;
       const wan = v.mode === 'shared' ? 1 : 200 + i;
       const nics = [{ label: 'NIC 1 · LAN', pg: `PG-LAN-${lan}`, vlan: lan, switch: vmSwitch, gateway: v.mode === 'split' ? 'Нет шлюза; при необходимости статические маршруты' : `10.${lan}.0.1 во внутреннем интерфейсе firewall/VRF`, address: `10.${lan}.0.${10+i}/24` }];
@@ -153,7 +154,6 @@
       v.cpu = r.cpu;
       // This is a starting configuration, not a promise of fitting arbitrary workloads.
       v.ram = Math.max(2,Math.min(ROLES[v.role].ram,r.ram));
-      if (v.role==='SQL') v.hdd=0;
     }
     const newSum=active.reduce((s,v)=>s+v.ram,0);
     if(newSum>budget) for(const v of active) v.ram=Math.max(1,Math.floor(v.ram*budget/newSum));

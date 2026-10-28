@@ -66,7 +66,7 @@ Import-Certificate -FilePath .\windows-certificate.pem -CertStoreLocation Cert:\
 
 ## Выпуск
 
-1. Измените версию в `package.json` и `package-lock.json` (`npm install --package-lock-only`). Статические подписи версии в UI обновляются отдельно при релизной подготовке.
+1. Измените версию в `package.json` и `package-lock.json` (`npm install --package-lock-only`). `npm run prepare:assets` обновляет версию в метатеге; интерфейс читает её оттуда.
 2. Пройдите CI на working branch.
 3. Создайте аннотированный тег на проверенном commit: `v1.0.1`, например. Версия должна точно совпадать с package.json.
 4. Workflow `Signed Android and Windows release` проверяет секреты и public pins, собирает APK и NSIS, проверяет подписи, создаёт `android-update.json`, `latest.yml`, blockmap и `SHA256SUMS.txt`.

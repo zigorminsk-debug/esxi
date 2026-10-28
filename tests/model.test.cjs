@@ -47,7 +47,7 @@ test('Many isolated WANs warn about firewall interface limits',()=>{
  const c=M.defaultConfig();c.vms=Array.from({length:12},(_,i)=>({...M.newVM('TP',i+1),mode:'isolated'}));const r=M.calculate(c);assert.ok(r.warnings.some(w=>w.title.includes('vNIC')));
 });
 test('Optimizer preserves hardware, network and disks and produces valid sizes',()=>{
- const c=M.defaultConfig(),o=M.optimize(c);assert.deepEqual(o.host,c.host);assert.deepEqual(o.vms.map(v=>v.mode),c.vms.map(v=>v.mode));assert.deepEqual(o.vms.map(v=>[v.ssd,v.hdd]),c.vms.map(v=>[v.ssd,v.hdd]));assert.deepEqual(M.validate(o),[]);
+ const c=M.defaultConfig();c.vms[1].hdd=200;const o=M.optimize(c);assert.deepEqual(o.host,c.host);assert.deepEqual(o.vms.map(v=>v.mode),c.vms.map(v=>v.mode));assert.deepEqual(o.vms.map(v=>[v.ssd,v.hdd]),c.vms.map(v=>[v.ssd,v.hdd]));assert.deepEqual(M.validate(o),[]);
 });
 test('Personalized export includes every enabled VM and all NICs, with caveats',()=>{
  const c=M.defaultConfig();c.vms[0].name='DC-TEST';c.vms[1].mode='split';const md=M.planMarkdown(c);assert.match(md,/DC-TEST/);assert.match(md,/NIC 2/);assert.match(md,/VCSA/);assert.match(md,/Расчётная модель/);assert.match(md,/VLAN 201/);assert.doesNotMatch(md,/undefined|NaN/);

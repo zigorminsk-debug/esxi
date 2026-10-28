@@ -38,6 +38,7 @@ jobs:
           VERSION="${TAG#v}"
           node -e 'const v=process.argv[1];if(require("./package.json").version!==v)throw Error("package.json version must equal tag")' "$VERSION"
           IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          (( MINOR < 100 && PATCH < 1000 )) || { echo "This versionCode scheme requires minor < 100 and patch < 1000"; exit 1; }
           CODE=$((MAJOR*1000000+MINOR*10000+PATCH*10+10000))
           (( CODE < 2147483647 )) || exit 1
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -63,7 +64,7 @@ jobs:
     timeout-minutes: 25
     env:
       ATLAS_VERSION_CODE: ${{ needs.preflight.outputs.version_code }}
-      ATLAS_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      ATLAS_TAG: ${{ inputs.tag || github.ref_name }}
       ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
