@@ -1,0 +1,73 @@
+name: Verify and build test packages
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run prepare:assets
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: ui-test-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+  android-test:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+      - run: npm run prepare:assets
+      - name: Build explicitly unsigned APK (no release identity)
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease lintRelease
+      - run: cp android/app/build/outputs/apk/release/app-release-unsigned.apk ESXi-Atlas-UNSIGNED-test.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-unsigned-test
+          path: ESXi-Atlas-UNSIGNED-test.apk
+          retention-days: 7
+  windows-test:
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Package unsigned Windows test application
+        run: npm run pack:win -- --config.win.signAndEditExecutable=false
+      - name: Archive unpacked application
+        shell: pwsh
+        run: Compress-Archive -Path dist/win-unpacked/* -DestinationPath ESXi-Atlas-Windows-UNSIGNED-test.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-unsigned-test
+          path: ESXi-Atlas-Windows-UNSIGNED-test.zip
+          retention-days: 7

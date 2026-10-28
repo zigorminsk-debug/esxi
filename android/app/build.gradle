@@ -1,0 +1,47 @@
+plugins { id 'com.android.application' }
+
+def keystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseSigned = keystorePath != null && !keystorePath.trim().isEmpty()
+def certificatePin = (System.getenv('ANDROID_CERT_SHA256') ?: '').toLowerCase(Locale.ROOT)
+if (releaseSigned && !(certificatePin ==~ /[0-9a-f]{64}/)) {
+    throw new GradleException('A signed release requires ANDROID_CERT_SHA256 (public certificate SHA-256).')
+}
+android {
+    namespace 'ai.arena.esxiatlas'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'ai.arena.esxiatlas'
+        minSdk 26
+        targetSdk 35
+        versionCode ((project.findProperty('atlasVersionCode') ?: '10000') as Integer)
+        versionName (project.findProperty('atlasVersionName') ?: '1.0.0')
+        buildConfigField 'String', 'CERTIFICATE_PIN', '"' + certificatePin + '"'
+        buildConfigField 'String', 'UPDATE_REPOSITORY', '"zigorminsk-debug/esxi"'
+    }
+    signingConfigs {
+        if (releaseSigned) {
+            release {
+                storeFile file(keystorePath)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing false
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (releaseSigned) signingConfig signingConfigs.release
+            // Without signing secrets the CI artifact is explicitly unsigned, never a fake release key.
+        }
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildFeatures { buildConfig true }
+    lint { abortOnError true; checkReleaseBuilds true }
+}
+dependencies { implementation 'androidx.core:core:1.15.0' }

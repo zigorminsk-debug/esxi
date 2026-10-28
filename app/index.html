@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="app-version" content="1.0.0">
+<meta name="theme-color" content="#101c2d"><meta name="description" content="ESXi 8 и vCenter 8: учебник, моделирующий стенд, расчёт ресурсов и независимых сетей. Работает офлайн.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>ESXi Atlas — учебник и лаборатория</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Перейти к содержимому</a>
+<div class="app-shell">
+<aside class="sidebar" id="sidebar" aria-label="Основная навигация">
+<a href="#home" class="brand"><img src="assets/icon.svg" width="40" height="40" alt=""><span>ESXi <b>Atlas</b><small>ИНЖЕНЕРНЫЙ СПРАВОЧНИК</small></span></a>
+<div class="edition"><span class="status-dot"></span> ESXi 8.x <span class="edition-divider">/</span> vCenter 8.x</div>
+<nav class="main-nav">
+<a href="#home" data-nav="home"><span data-icon="grid"></span>Обзор</a>
+<a href="#lab" data-nav="lab"><span data-icon="server"></span>Моделирующий стенд<span class="nav-badge">LAB</span></a>
+<a href="#course" data-nav="course"><span data-icon="book"></span>Учебник <span id="course-count" class="nav-count">16</span></a>
+<a href="#commands" data-nav="commands"><span data-icon="terminal"></span>Команды</a>
+<a href="#gallery" data-nav="gallery"><span data-icon="image"></span>Скриншоты</a>
+<a href="#saved" data-nav="saved"><span data-icon="bookmark"></span>Избранное</a>
+</nav>
+<div class="nav-caption">ПОДГОТОВКА И НАСТРОЙКА</div><nav id="course-nav" class="course-nav"></nav>
+<div class="sidebar-bottom"><div class="offline-pill"><span data-icon="shield"></span><span>Знания всегда под рукой<small>Учебник доступен офлайн</small></span></div><a href="#settings" class="settings-link"><span data-icon="settings"></span>Настройки и обновления<span class="version">v1.0.0</span></a></div>
+</aside>
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+<div class="workspace">
+<header class="topbar"><button class="icon-button mobile-menu" id="menu-button" aria-label="Открыть меню" aria-expanded="false"><span data-icon="menu"></span></button><div class="breadcrumb">Рабочее пространство <span>/</span> <strong id="breadcrumb">Обзор</strong></div><div class="top-actions"><button class="search-trigger" id="search-trigger"><span data-icon="search"></span><span>Поиск по учебнику</span><kbd>/</kbd></button><span class="local-mode"><span class="status-dot"></span>Локальный режим</span><button class="avatar" id="profile-button" aria-label="Настройки приложения">EA</button></div></header>
+<main id="main" tabindex="-1"></main>
+<footer class="footer"><span>ESXi Atlas <span class="muted">·</span> Учебник и расчётная модель</span><span>Не подключается к ESXi <span class="muted">·</span> v1.0.0</span></footer>
+</div></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<dialog id="search-dialog" class="search-dialog"><div class="dialog-head"><span data-icon="search"></span><input id="search-input" type="search" placeholder="Снапшоты, VLAN, пароль, SQL…" aria-label="Поиск по учебнику"><button class="text-button" id="search-close">Закрыть</button></div><div id="search-results"></div><div class="search-hint">Поиск по главам, ролям и командам · Enter — открыть первый результат</div></dialog>
+<dialog id="app-dialog" class="app-dialog"><div id="dialog-content"></div></dialog>
+<input type="file" accept="image/png,image/jpeg,image/webp" id="screenshot-input" hidden>
+<script src="vendor/model.js"></script><script src="vendor/content.js"></script><script src="app.js"></script>
+</body></html>

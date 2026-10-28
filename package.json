@@ -1,0 +1,87 @@
+{
+  "name": "esxi-atlas",
+  "version": "1.0.0",
+  "description": "Offline ESXi 8 / vCenter 8 field guide and resource planning lab",
+  "private": true,
+  "author": "ESXi Atlas contributors",
+  "license": "MIT",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "prepare:assets": "node scripts/sync-assets.cjs",
+    "start": "node scripts/serve.cjs",
+    "desktop": "npm run prepare:assets && electron .",
+    "test": "node --test tests/*.test.cjs",
+    "test:ui": "playwright test",
+    "build:win": "npm run prepare:assets && electron-builder --win nsis --x64 --publish never",
+    "pack:win": "npm run prepare:assets && electron-builder --win dir --x64 --publish never",
+    "release:check": "node scripts/release-manifest.cjs --check"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "@fontsource/inter": "5.3.0"
+  },
+  "build": {
+    "appId": "ai.arena.esxiatlas",
+    "productName": "ESXi Atlas",
+    "artifactName": "ESXi-Atlas-${version}-windows-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "desktop/resources"
+    },
+    "files": [
+      "desktop/**/*",
+      "app/**/*",
+      "shared/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zigorminsk-debug",
+        "repo": "esxi",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "desktop/resources/icon.png",
+      "publisherName": "ESXi Atlas Code Signing",
+      "verifyUpdateCodeSignature": true,
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "ru_RU",
+        "en_US"
+      ],
+      "language": "1049"
+    },
+    "extraResources": [
+      {
+        "from": "signing/public",
+        "to": "signing"
+      }
+    ]
+  }
+}
