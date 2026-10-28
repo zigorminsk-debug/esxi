@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowInsets;
+import android.graphics.Insets;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -68,7 +69,7 @@ public final class MainActivity extends Activity {
         web.addJavascriptInterface(new Bridge(), "AndroidBridge");
         web.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                Uri uri = request.getRequestURI();
+                Uri uri = request.getUrl();
                 if (!"https".equals(uri.getScheme()) || !"appassets.androidplatform.net".equals(uri.getHost()) || !uri.getPath().startsWith("/assets/")) return blocked();
                 String asset = uri.getPath().substring(8);
                 if (asset.contains("..") || asset.contains("\\") || asset.contains("%")) return blocked();
@@ -80,7 +81,7 @@ public final class MainActivity extends Activity {
                 } catch (Exception e) { return blocked(); }
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getRequestURI();
+                Uri uri = request.getUrl();
                 if (ORIGIN.equals(uri.getScheme()+"://"+uri.getHost()) && uri.getPath().startsWith("/assets/")) return false;
                 if (request.isForMainFrame() && request.hasGesture()) openAllowed(uri);
                 return true;
