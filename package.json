@@ -47,7 +47,8 @@
         "provider": "github",
         "owner": "zigorminsk-debug",
         "repo": "esxi",
-        "releaseType": "release"
+        "releaseType": "release",
+        "publisherName": "ESXi Atlas Code Signing"
       }
     ],
     "win": {
@@ -60,9 +61,12 @@
         }
       ],
       "icon": "desktop/resources/icon.png",
-      "publisherName": "ESXi Atlas Code Signing",
       "verifyUpdateCodeSignature": true,
-      "signAndEditExecutable": true
+      "signAndEditExecutable": true,
+      "signtoolOptions": {
+        "publisherName": "ESXi Atlas Code Signing"
+      },
+      "forceCodeSigning": true
     },
     "nsis": {
       "oneClick": false,

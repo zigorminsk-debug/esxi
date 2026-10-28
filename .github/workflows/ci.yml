@@ -40,12 +40,25 @@ jobs:
         with: { node-version: 22, cache: npm }
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with: { distribution: temurin, java-version: 17 }
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
       - run: npm run prepare:assets
       - name: Build explicitly unsigned APK (no release identity)
         working-directory: android
-        run: ./gradlew --no-daemon assembleRelease lintRelease
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease lintRelease 2>&1 | tee ../native-build.log
+      - name: Publish unsigned build diagnostics
+        if: failure()
+        shell: bash
+        run: node scripts/ci-diagnostics.cjs native-build.log
       - run: cp android/app/build/outputs/apk/release/app-release-unsigned.apk ESXi-Atlas-UNSIGNED-test.apk
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -62,7 +75,14 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: Package unsigned Windows test application
-        run: npm run pack:win -- --config.win.signAndEditExecutable=false
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run pack:win -- --config.win.signAndEditExecutable=false --config.win.forceCodeSigning=false 2>&1 | tee native-build.log
+      - name: Publish unsigned build diagnostics
+        if: failure()
+        shell: bash
+        run: node scripts/ci-diagnostics.cjs native-build.log
       - name: Archive unpacked application
         shell: pwsh
         run: Compress-Archive -Path dist/win-unpacked/* -DestinationPath ESXi-Atlas-Windows-UNSIGNED-test.zip

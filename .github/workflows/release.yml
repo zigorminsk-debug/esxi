@@ -63,7 +63,7 @@ jobs:
     timeout-minutes: 25
     env:
       ATLAS_VERSION_CODE: ${{ needs.preflight.outputs.version_code }}
-      ATLAS_TAG: ${{ env.RELEASE_TAG }}
+      ATLAS_TAG: ${{ github.event.release.tag_name || inputs.tag }}
       ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -75,7 +75,13 @@ jobs:
         with: { node-version: 22, cache: npm }
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
         with: { distribution: temurin, java-version: 17 }
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3
       - run: npm run prepare:assets
       - name: Decode signing identity to runner temporary storage
