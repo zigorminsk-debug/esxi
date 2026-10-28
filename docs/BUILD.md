@@ -74,7 +74,7 @@ APK debug: `android/app/build/outputs/apk/debug/app-debug.apk`. У него от
 ./gradlew assembleRelease -PatlasVersionCode=10001 -PatlasVersionName=1.0.0
 ```
 
-Подпись включается только при `ANDROID_KEYSTORE_PATH`; отсутствующие секреты не заменяются публичным «release key». Неподписанный CI APK предназначен для проверки сборки, его нельзя установить напрямую как обычный релиз. Подписанный APK из Releases устанавливается поверх прежнего с тем же ключом и большим versionCode.
+По умолчанию используется постоянная лабораторная identity из `signing/repository/identity.json`. CI собирает устанавливаемый `ESXi-Atlas-signed-test.apk`; релиз публикует `ESXi-Atlas-android.apk` с той же подписью. Переменные `ANDROID_KEYSTORE_PATH` и связанные могут переопределить identity для будущего приватного режима. Обновление поверх прежнего APK требует той же подписи и большего versionCode.
 
 Системная пересылка использует Android Sharesheet. Копирование — ClipboardManager. Загрузка файлов и снимков — системный file picker. Установка обновлений — только через системный Package Installer и явное разрешение пользователя. Постоянного фонового сервиса нет.
 
@@ -85,14 +85,14 @@ APK debug: `android/app/build/outputs/apk/debug/app-debug.apk`. У него от
 `ci.yml` запускается на push в `main`/`arena/**`, pull request и вручную:
 
 1. Ubuntu: model tests + Playwright desktop/mobile.
-2. Android: Gradle assembleRelease без signing secrets + lint; artifact `android-unsigned-test`.
+2. Android: Gradle assembleRelease с committed lab identity + lint + apksigner verify; artifact `android-signed-test`.
 3. Windows: Electron unpacked build; artifact `windows-unsigned-test`.
 
-Эти пакеты явно помечены `UNSIGNED`, срок хранения 7 дней. Они не публикуются в Releases и не имеют доверенного update channel.
+Android artifact подписан лабораторной identity и устанавливается, но не является стабильным релизом. Windows test artifact остаётся unpacked/unsigned. Срок хранения 7 дней. Стабильные подписанные пакеты публикуются только release workflow.
 
 ### Подписанный релиз
 
-`release.yml` запускается стабильным тегом `vMAJOR.MINOR.PATCH` или вручную с существующим тегом. Требуются все секреты из `SIGNING.md`. Сначала проверяются public pins, затем параллельно собираются Android и Windows. Публикация только после обеих успешных сборок и проверки checksums.
+`release.yml` запускается стабильным тегом `vMAJOR.MINOR.PATCH` или вручную с существующим тегом. GitHub Secrets не требуются: используется committed lab identity из `signing/repository/`. Сначала проверяются public pins, затем параллельно собираются Android и Windows. Публикация только после обеих успешных сборок и проверки checksums.
 
 Release assets:
 

@@ -10,6 +10,9 @@ local-secrets/
 *.keystore
 *.p12
 *.pfx
+!signing/repository/
+!signing/repository/*.p12
+!signing/repository/*.pfx
 android/.gradle/
 android/local.properties
 android/app/build/

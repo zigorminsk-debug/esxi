@@ -49,21 +49,29 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
       - run: npm run prepare:assets
-      - name: Build explicitly unsigned APK (no release identity)
+      - name: Build installable APK with committed lab identity
         working-directory: android
         shell: bash
         run: |
           set -o pipefail
           ./gradlew --no-daemon assembleRelease lintRelease 2>&1 | tee ../native-build.log
-      - name: Publish unsigned build diagnostics
+      - name: Publish build diagnostics
         if: failure()
         shell: bash
         run: node scripts/ci-diagnostics.cjs native-build.log
-      - run: cp android/app/build/outputs/apk/release/app-release-unsigned.apk ESXi-Atlas-UNSIGNED-test.apk
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk > apksigner-report.txt
+          ACTUAL=$(grep 'certificate SHA-256 digest:' apksigner-report.txt | sed 's/.*digest: //' | tr -d '[:space:]')
+          EXPECTED=$(cat signing/public/android-certificate.sha256)
+          test "$ACTUAL" = "$EXPECTED"
+          cp android/app/build/outputs/apk/release/app-release.apk ESXi-Atlas-signed-test.apk
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: android-unsigned-test
-          path: ESXi-Atlas-UNSIGNED-test.apk
+          name: android-signed-test
+          path: ESXi-Atlas-signed-test.apk
           retention-days: 7
   windows-test:
     needs: verify

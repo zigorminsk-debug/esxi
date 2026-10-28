@@ -47,17 +47,8 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run prepare:assets && npm test
-      - name: Verify public pins and all signing secrets
+      - name: Verify committed public lab signing identity and pins
         run: node scripts/release-manifest.cjs --check
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
-          WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          WINDOWS_CSC_PASSWORD: ${{ secrets.WINDOWS_CSC_PASSWORD }}
-          WINDOWS_CERT_SHA256: ${{ secrets.WINDOWS_CERT_SHA256 }}
   android:
     needs: preflight
     runs-on: ubuntu-24.04
@@ -65,10 +56,6 @@ jobs:
     env:
       ATLAS_VERSION_CODE: ${{ needs.preflight.outputs.version_code }}
       ATLAS_TAG: ${{ inputs.tag || github.ref_name }}
-      ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with: { ref: '${{ needs.preflight.outputs.sha }}' }
@@ -85,13 +72,6 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3
       - run: npm run prepare:assets
-      - name: Decode signing identity to runner temporary storage
-        shell: bash
-        env: { KEYSTORE_BASE64: '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' }
-        run: |
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          chmod 600 "$RUNNER_TEMP/release.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
       - name: Build persistent-key signed APK
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease lintRelease -PatlasVersionCode="$ATLAS_VERSION_CODE" -PatlasVersionName="${RELEASE_TAG#v}"
@@ -103,7 +83,8 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)"
           "$APKSIGNER" verify --verbose --print-certs release-artifacts/ESXi-Atlas-android.apk > apksigner-report.txt
           ACTUAL=$(grep 'certificate SHA-256 digest:' apksigner-report.txt | sed 's/.*digest: //' | tr -d '[:space:]')
-          test "$ACTUAL" = "$ANDROID_CERT_SHA256"
+          EXPECTED=$(cat signing/public/android-certificate.sha256)
+          test "$ACTUAL" = "$EXPECTED"
           node scripts/release-manifest.cjs --android release-artifacts
           cp signing/public/android-certificate.pem signing/public/android-certificate.sha256 release-artifacts/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -112,8 +93,6 @@ jobs:
           path: release-artifacts/*
           if-no-files-found: error
           retention-days: 7
-      - if: always()
-        run: rm -f "$RUNNER_TEMP/release.jks"
   windows:
     needs: preflight
     runs-on: windows-2025
@@ -126,12 +105,11 @@ jobs:
       - run: npm ci
       - name: Build Authenticode-signed NSIS and updater metadata
         shell: pwsh
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_PASSWORD }}
-          WINDOWS_CERT_SHA256: ${{ secrets.WINDOWS_CERT_SHA256 }}
         run: |
-          [Environment]::SetEnvironmentVariable('ATLAS_WINDOWS_CERT_SHA256',$env:WINDOWS_CERT_SHA256,'Process')
+          $identity = Get-Content signing/repository/identity.json -Raw | ConvertFrom-Json
+          $env:CSC_LINK = (Resolve-Path $identity.windows.certificate).Path
+          $env:CSC_KEY_PASSWORD = $identity.windows.password
+          $env:ATLAS_WINDOWS_CERT_SHA256 = $identity.windows.certificateSha256
           npm run build:win -- --config.forceCodeSigning=true
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe=Get-ChildItem dist/*.exe | Select-Object -First 1
@@ -181,7 +159,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          NOTES='ESXi Atlas '"$RELEASE_TAG"$'\n\nAndroid APK and Windows x64 installer.\nSigned release: certificate pins and checksums attached.\nWindows lab certificate trust: see docs/SIGNING.md.\nEducational capacity model; no remote ESXi execution.'
+          NOTES='ESXi Atlas '"$RELEASE_TAG"$'\n\nAndroid APK and Windows x64 installer.\nSigned with the committed public lab identity; certificate pins and checksums attached.\nWindows lab certificate trust: see docs/SIGNING.md.\nEducational capacity model; no remote ESXi execution.'
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-artifacts/* --clobber --repo "$GITHUB_REPOSITORY"
           else

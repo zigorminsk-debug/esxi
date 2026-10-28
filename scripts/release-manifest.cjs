@@ -5,10 +5,14 @@ const [mode='--check',dir]=process.argv.slice(2);
 function hash(file){return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}
 function readPin(name){const s=fs.readFileSync(path.join(root,'signing/public',name),'utf8').trim();if(!/^[0-9a-f]{64}$/.test(s))throw new Error('Missing/invalid public pin '+name);return s;}
 if(mode==='--check'){
- readPin('android-certificate.sha256');readPin('windows-certificate.sha256');
- for(const name of ['ANDROID_KEYSTORE_BASE64','ANDROID_KEYSTORE_PASSWORD','ANDROID_KEY_PASSWORD','ANDROID_KEY_ALIAS','ANDROID_CERT_SHA256','WINDOWS_CSC_LINK','WINDOWS_CSC_PASSWORD','WINDOWS_CERT_SHA256'])if(!process.env[name])throw new Error('Missing GitHub Actions secret '+name);
- if(process.env.ANDROID_CERT_SHA256!==readPin('android-certificate.sha256')||process.env.WINDOWS_CERT_SHA256!==readPin('windows-certificate.sha256'))throw new Error('Secret signing identities do not match committed public pins');
- console.log('Release signing configuration present.');
+ const identityFile=path.join(root,'signing/repository/identity.json');
+ if(!fs.existsSync(identityFile))throw new Error('Missing signing/repository/identity.json. Run scripts/setup-repository-signing.cjs once.');
+ const identity=JSON.parse(fs.readFileSync(identityFile,'utf8'));
+ if(identity.schema!==1||!identity.android||!identity.windows)throw new Error('Invalid repository signing identity');
+ for(const rel of [identity.android.keystore,identity.windows.certificate])if(!fs.existsSync(path.join(root,rel)))throw new Error('Missing signing file '+rel);
+ if(!identity.android.storePassword||!identity.android.keyPassword||!identity.android.alias||!identity.windows.password)throw new Error('Incomplete repository signing credentials');
+ if(identity.android.certificateSha256!==readPin('android-certificate.sha256')||identity.windows.certificateSha256!==readPin('windows-certificate.sha256'))throw new Error('Repository identity does not match committed public pins');
+ console.log('Public repository lab signing identity present and pins match.');
 }else if(mode==='--android'){
  const apk=path.join(dir,'ESXi-Atlas-android.apk');if(!fs.existsSync(apk))throw new Error('Signed APK missing');
  const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'))).version;
