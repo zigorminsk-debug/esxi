@@ -13,6 +13,8 @@
 | `vcsa-sso.jpg` | Составная иллюстрация NTP и SSO | VCSA 8.0, статья | Тот же источник |
 | `vcsa-password.png` | Appliance root password expiration | VCSA Management, версия не заявлена как конкретный build | https://www.starwindsoftware.com/blog/what-to-do-if-your-vcenter-server-password-expires/ |
 | `snapshot-column.png` | Show Columns → Needs Consolidation | **vSphere 7**, справочный снимок | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/7-0/vsphere-virtual-machine-administration/managing-virtual-machinesvm-admin/using-snapshots-to-manage-virtual-machinesvm-admin/consolidate-snapshotsvm-admin.html |
+| `vds-portgroup-name.png` | New Distributed Port Group → Name and location | vSphere 8.0, Broadcom TechDocs | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-networking/basic-networking-with-vnetwork-distributed-switches/dvport-groups/add-a-distributed-port-group.html |
+| `vds-portgroup-vlan.png` | New Distributed Port Group → Configure settings / VLAN type | vSphere 8.0, Broadcom TechDocs | Тот же источник |
 
 Права на изображения остаются у авторов. Небольшая атрибутированная подборка используется как справочные цитаты в учебном контексте. MIT-лицензия кода не распространяется на сторонние изображения, торговые марки или продукты VMware/Broadcom. Перед коммерческой перепубликацией проверьте условия источников и получите разрешения, где они необходимы. При требовании правообладателя удалите соответствующий снимок и используйте собственную съёмку.
 
@@ -21,7 +23,7 @@
 В главы встроены явные места для собственных снимков:
 
 - VCSA → Select deployment size: Tiny / Default.
-- New Virtual Machine → Customize hardware.
+- New Virtual Machine → Customize hardware (стандартный Host Client/vSphere Client).
 - VM → CPU Shares / Reservation / Limit.
 - Add Port Group: имя и VLAN.
 - VM → два Network Adapter: LAN и WAN transit.

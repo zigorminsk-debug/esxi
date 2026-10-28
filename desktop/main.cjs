@@ -27,7 +27,7 @@ async function checkUpdates(){
 function createWindow(){
  win=new BrowserWindow({width:1440,height:960,minWidth:390,minHeight:620,backgroundColor:'#f5f7fa',title:'ESXi Atlas',icon:path.join(__dirname,'resources/icon.png'),autoHideMenuBar:true,show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,spellcheck:false}});
  win.webContents.setWindowOpenHandler(({url})=>{try{shell.openExternal(safeExternal(url));}catch{}return {action:'deny'};});
- win.webContents.on('will-navigate',(event,url)=>{if(url!==pathToFileURL(path.join(__dirname,'../app/index.html')).href)event.preventDefault();});
+ win.webContents.on('will-navigate',(event,url)=>{try{const target=new URL(url),home=new URL(pathToFileURL(path.join(__dirname,'../app/index.html')).href);if(target.protocol!==home.protocol||target.pathname!==home.pathname)event.preventDefault();}catch{event.preventDefault();}});
  win.webContents.on('will-attach-webview',event=>event.preventDefault());
  win.webContents.session.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
  win.loadFile(path.join(__dirname,'../app/index.html'));

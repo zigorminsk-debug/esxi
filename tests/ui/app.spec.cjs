@@ -33,7 +33,7 @@ test('Project export/import, command copy and explicit share dialog',async({page
  await page.getByRole('button',{name:'Поделиться командой Версия и модель сервера',exact:true}).click();await expect(page.locator('#share-text')).toContainText('vmware -vl');await expect(page.getByRole('button',{name:'Telegram',exact:true})).toBeVisible();await page.getByRole('button',{name:'Отмена',exact:true}).click();
 });
 test('All real screenshots load, local image import is labelled',async({page})=>{
- await page.goto('/#gallery');await expect(page.locator('.screenshot-card')).toHaveCount(9);
+ await page.goto('/#gallery');await expect(page.locator('.screenshot-card')).toHaveCount(11);
  await page.locator('.screenshot-card').first().locator('img').scrollIntoViewIfNeeded();
  expect(await page.locator('.screenshot-card').first().locator('img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBeTruthy();
  await page.locator('[data-import-shot]').first().click();

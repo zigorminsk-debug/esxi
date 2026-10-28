@@ -66,3 +66,5 @@ test('No accidental non-Russian CJK text in original content',()=>{
 });
 
 test('Optimizer never emits fractional or invalid VM resources on a tiny host',()=>{const c=M.defaultConfig();c.host.ram=12;c.host.cores=10;const o=M.optimize(c);assert.deepEqual(M.validate(o),[]);});
+
+test('Disabling a VM does not renumber another VM VLAN plan',()=>{const c=M.defaultConfig();c.vms[0].mode='isolated';c.vms[1].mode='isolated';const before=M.topology(c).rows[1].lan;c.vms[0].enabled=false;assert.equal(M.topology(c).rows[0].lan,before);});
