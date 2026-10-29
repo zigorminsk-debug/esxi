@@ -1,0 +1,168 @@
+name: Signed Android and Windows release
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release (v1.0.0)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_code: ${{ steps.version.outputs.code }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: version
+        shell: bash
+        run: |
+          TAG="$RELEASE_TAG"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Only stable vMAJOR.MINOR.PATCH tags are supported'; exit 1; }
+          VERSION="${TAG#v}"
+          node -e 'const v=process.argv[1];if(require("./package.json").version!==v)throw Error("package.json version must equal tag")' "$VERSION"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          (( MINOR < 100 && PATCH < 1000 )) || { echo "This versionCode scheme requires minor < 100 and patch < 1000"; exit 1; }
+          CODE=$((MAJOR*1000000+MINOR*10000+PATCH*10+10000))
+          (( CODE < 2147483647 )) || exit 1
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run prepare:assets && npm test
+      - name: Verify committed public lab signing identity and pins
+        run: node scripts/release-manifest.cjs --check
+  android:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ATLAS_VERSION_CODE: ${{ needs.preflight.outputs.version_code }}
+      ATLAS_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with: { ref: '${{ needs.preflight.outputs.sha }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --omit=dev
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with: { distribution: temurin, java-version: 17 }
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3
+      - run: npm run prepare:assets
+      - name: Build persistent-key signed APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease lintRelease -PatlasVersionCode="$ATLAS_VERSION_CODE" -PatlasVersionName="${RELEASE_TAG#v}"
+      - name: Verify Android signature and generate update manifest
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk release-artifacts/ESXi-Atlas-android.apk
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs release-artifacts/ESXi-Atlas-android.apk > apksigner-report.txt
+          ACTUAL=$(grep 'certificate SHA-256 digest:' apksigner-report.txt | sed 's/.*digest: //' | tr -d '[:space:]')
+          EXPECTED=$(cat signing/public/android-certificate.sha256)
+          test "$ACTUAL" = "$EXPECTED"
+          node scripts/release-manifest.cjs --android release-artifacts
+          cp signing/public/android-certificate.pem signing/public/android-certificate.sha256 release-artifacts/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-android
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+  windows:
+    needs: preflight
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with: { ref: '${{ needs.preflight.outputs.sha }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Build Authenticode-signed NSIS and updater metadata
+        shell: pwsh
+        run: |
+          $identity = Get-Content signing/repository/identity.json -Raw | ConvertFrom-Json
+          $env:CSC_LINK = (Resolve-Path $identity.windows.certificate).Path
+          $env:CSC_KEY_PASSWORD = $identity.windows.password
+          $env:ATLAS_WINDOWS_CERT_SHA256 = $identity.windows.certificateSha256
+          npm run build:win -- --config.forceCodeSigning=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe=Get-ChildItem dist/*.exe | Select-Object -First 1
+          $sig=Get-AuthenticodeSignature $exe.FullName
+          $pin=(Get-FileHash $exe.FullName -Algorithm SHA256).Hash
+          $certPin=(Get-Content signing/public/windows-certificate.sha256 -Raw).Trim()
+          $actualCertPin=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($sig.SignerCertificate.RawData)).Replace("-","").ToLower()
+          # Self-signed lab certificates are not chain-trusted on hosted runners. Verify exact DER identity here;
+          # end-user trust setup is documented, and updater independently requires a trusted Valid signature.
+          if ($null -eq $sig.SignerCertificate -or $actualCertPin -ne $certPin) { throw 'Signing certificate pin mismatch' }
+          if ($sig.SignatureType -ne 'Authenticode') { throw 'Installer is not Authenticode signed' }
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          Copy-Item $exe.FullName release-artifacts/
+          Copy-Item dist/*.blockmap,dist/latest.yml release-artifacts/
+          Copy-Item signing/public/windows-certificate.pem,signing/public/windows-certificate.sha256 release-artifacts/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-windows
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [preflight, android, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with: { ref: '${{ needs.preflight.outputs.sha }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Verify assembled release checksums
+        shell: bash
+        run: |
+          cd release-artifacts
+          sha256sum ESXi-Atlas-android.apk android-update.json ESXi-Atlas-*.exe ESXi-Atlas-*.exe.blockmap latest.yml *-certificate.pem *-certificate.sha256 > SHA256SUMS.txt
+          cd ..
+          node scripts/verify-release.cjs release-artifacts
+      - name: Publish one complete stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          NOTES='ESXi Atlas '"$RELEASE_TAG"$'\n\nAndroid APK and Windows x64 installer.\nSigned with the committed public lab identity; certificate pins and checksums attached.\nWindows lab certificate trust: see docs/SIGNING.md.\nEducational capacity model; no remote ESXi execution.'
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-artifacts/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" release-artifacts/* --verify-tag --title "ESXi Atlas $RELEASE_TAG" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+          fi
