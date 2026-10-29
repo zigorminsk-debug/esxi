@@ -18,3 +18,52 @@
 .font-step-buttons{display:flex;gap:8px;align-items:center}
 .font-step-buttons .button{min-width:42px}
 @media(max-width:720px){.topbar{gap:8px}.top-actions{gap:8px}.breadcrumb{font-size:calc(9px * var(--font-scale,1))}.breadcrumb strong{max-width:96px}.font-size-button{min-width:34px;padding:0 7px}.avatar{display:none}.font-presets .button{flex:1}.font-range-row{gap:8px}}
+
+
+/* A practical runbook: readable steps and screenshots next to their actions. */
+.plan-prerequisites,.plan-firewall{margin:18px 0;min-width:0}
+.plan-prerequisites .card-head,.plan-vm-summary{flex-wrap:wrap}
+.plan-prerequisites .card-head p,.plan-subheading p,.plan-firewall .card-head p{font-size:calc(12px * var(--font-scale,1));color:#60728d;line-height:1.7}
+.plan-subheading{margin:28px 0 10px}
+.plan-subheading h2{font-size:calc(20px * var(--font-scale,1));margin-bottom:5px}
+.plan-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
+.plan-nav .pill{background:#fff;border:1px solid #d6e1f2;color:#315786;padding:8px 12px;font-size:calc(11px * var(--font-scale,1));cursor:pointer}
+.plan-vms{display:grid;gap:16px;margin-bottom:22px;min-width:0}
+.plan-vm{scroll-margin-top:95px;min-width:0}
+.plan-vm-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:20px 22px;cursor:pointer;list-style:none}
+.plan-vm-summary::-webkit-details-marker{display:none}
+.plan-vm-summary::after{content:'⌄';font-size:calc(20px * var(--font-scale,1));color:#4d6b94}
+.plan-vm[open]>.plan-vm-summary{border-bottom:1px solid var(--line)}
+.plan-vm[open]>.plan-vm-summary::after{content:'⌃'}
+.plan-vm-summary strong{display:block;color:#28466d;font-size:calc(16px * var(--font-scale,1));overflow-wrap:anywhere}
+.plan-vm-summary small{display:block;color:#62748e;margin-top:4px;font-size:calc(11px * var(--font-scale,1))}
+.plan-vm .card-body{display:grid;gap:24px;min-width:0}
+.runbook-stage{border-bottom:1px solid var(--line);padding-bottom:23px;min-width:0}
+.runbook-stage:last-child{border-bottom:0;padding-bottom:0}
+.runbook-stage h3{font-size:calc(15px * var(--font-scale,1));color:#304f79;margin:0 0 12px}
+.runbook-stage p,.runbook-note,.plan-firewall p{font-size:calc(12px * var(--font-scale,1));color:#536984;line-height:1.8}
+.runbook-list{padding-left:25px;margin:10px 0 16px}
+.runbook-list li,.runbook-extra li{font-size:calc(12px * var(--font-scale,1));color:#405673;line-height:1.85;margin:9px 0}
+.runbook-list li::marker{color:#356be6;font-weight:700}
+.plan-vm .result-table,.plan-prerequisites .result-table,.plan-firewall .result-table{font-size:calc(12px * var(--font-scale,1))}
+.plan-vm .result-table th,.plan-prerequisites .result-table th,.plan-firewall .result-table th{color:#566d8d;font-size:calc(11px * var(--font-scale,1))}
+.plan-vm .result-table td,.plan-prerequisites .result-table td,.plan-firewall .result-table td{color:#405673}
+.nic-table{min-width:650px}
+.runbook-photos,.runbook-extra{border:1px solid #dce6f4;border-radius:9px;background:#f8faff;padding:0 15px;margin-top:13px}
+.runbook-photos summary,.runbook-extra summary{cursor:pointer;color:#315b9b;font-weight:700;font-size:calc(12px * var(--font-scale,1));padding:13px 0;line-height:1.5}
+.runbook-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px;padding-bottom:10px}
+.runbook-photo-grid .figure{margin:5px 0 15px;min-width:0}
+.runbook-photo-grid .figure-button{min-height:120px;height:260px}
+.runbook-photo-grid .figure-button img{max-height:100%;width:auto;object-fit:contain}
+.runbook-photo-grid .figure figcaption{color:#566b87;font-size:calc(11px * var(--font-scale,1))}
+.runbook-photo-grid .figure figcaption strong{font-size:calc(12px * var(--font-scale,1));color:#385477}
+.runbook-note a{color:#356be6;text-decoration:underline}
+@media(max-width:720px){
+ .plan-prerequisites .card-head{align-items:flex-start}
+ .plan-vm-summary{padding:17px;gap:8px}
+ .plan-vm .card-body{padding:17px}
+ .runbook-photos,.runbook-extra{padding:0 10px}
+ .runbook-photo-grid{grid-template-columns:1fr}
+ .runbook-photo-grid .figure-button{height:auto;min-height:120px}
+ .page-heading .heading-actions{flex-wrap:wrap}
+}

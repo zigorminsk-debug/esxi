@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { autoUpdater } = require('electron-updater');
 let win = null, downloaded = false, checking = false, updateInfo = null;
-const allowedHosts = new Set(['github.com','api.github.com','techdocs.broadcom.com','knowledge.broadcom.com','claudiokuenzler.com','vcloud-lab.com','www.starwindsoftware.com','t.me','wa.me','www.nakivo.com']);
+const allowedHosts = new Set(['github.com','api.github.com','techdocs.broadcom.com','knowledge.broadcom.com','claudiokuenzler.com','vcloud-lab.com','www.starwindsoftware.com','t.me','wa.me','www.nakivo.com','support.us.ovhcloud.com','woshub.com','www.mobinhost.com','suay.site','petri.com','serverdecode.com','ahelpme.com']);
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) app.quit();
 app.setAppUserModelId('ai.arena.esxiatlas');

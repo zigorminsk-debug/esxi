@@ -27,7 +27,7 @@
   const round = (x, n = 1) => Number(x.toFixed(n));
   function newVM(role = 'DC', index = 1) {
     const r = ROLES[role] || ROLES.DC;
-    return { id: 'vm-' + index + '-' + role.toLowerCase(), name: role.toUpperCase() + '-' + String(index).padStart(2,'0'), role, cpu: r.cpu, ram: r.ram, ssd: r.ssd, hdd: r.hdd, users: r.users, mode: 'shared', enabled: true };
+    return { id: 'vm-' + index + '-' + role.toLowerCase(), name: role.toUpperCase() + '-' + String(index).padStart(2,'0'), role, cpu: r.cpu, ram: r.ram, ssd: r.ssd, hdd: r.hdd, users: r.users, mode: 'shared', enabled: true, os: role==='Bitrix'?'linux':'windows' };
   }
   function defaultConfig() {
     return { host: { sockets: 2, cores: 16, ghz: 2.6, ram: 128, ssdCount: 2, ssdSize: 1024, hddCount: 2, hddSize: 4000, nics: 3, nicGbps: 10, ssdIops: 20000, hddIops: 180 }, vms: ['DC','SQL','1C','File','RDP','Bitrix','TP'].map(newVM), vcenter: true, router: true };
@@ -51,6 +51,7 @@
         if (!Number.isInteger(x) || x < min || x > max) errors.push(`${v.name}: ${key} — целое ${min}–${max}.`);
       }
       if (typeof v.enabled !== 'boolean') errors.push(`${v.name}: некорректный флаг включения.`);
+      if (v.os !== undefined && !['windows','linux'].includes(v.os)) errors.push(`${v.name}: ОС должна быть windows или linux.`);
     }
     if (typeof config.vcenter !== 'boolean' || typeof config.router !== 'boolean') errors.push('Некорректные параметры управляющих ВМ.');
     return [...new Set(errors)];
@@ -173,6 +174,230 @@
       {id:'backup',title:'Проверка задач и событий ВМ',shell:'PowerCLI · Windows',risk:'read',text:'Get-VIEvent -Entity (Get-VM -Name "VM_NAME") -MaxSamples 50 |\n  Select-Object CreatedTime, FullFormattedMessage',note:'Замените VM_NAME. События могут содержать внутренние адреса: проверьте текст перед пересылкой.'}
     ];
   }
+
+  // The personal runbook is a worked example, not a discovered configuration.
+  // In particular, firewall gateways, addresses, host uplinks and DNS must be
+  // confirmed by the operator before they are used on a real infrastructure.
+  function defaultOS(v) { return v.os || (v.role === 'Bitrix' ? 'linux' : 'windows'); }
+  function osProfile(v) {
+    return defaultOS(v) === 'linux'
+      ? {os:'linux', label:'Ubuntu Server 22.04 LTS (пример)', family:'Linux', version:'Ubuntu Linux (64-bit); выберите 22.04, если доступна отдельно', iso:'ISO Ubuntu Server 22.04 LTS, имя файла зависит от загрузки'}
+      : {os:'windows', label:'Windows Server 2022 Desktop Experience (пример)', family:'Windows', version:'Microsoft Windows Server 2022 (64-bit)', iso:'ISO Windows Server 2022, имя файла зависит от загрузки'};
+  }
+  function guestHostname(name, os) {
+    const max = os === 'windows' ? 15 : 63;
+    return name.length <= max && /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(name) && !/^\d+$/.test(name) ? name : '';
+  }
+  function dnsExample(v, rows) {
+    if (v.role === 'DC' && defaultOS(v) === 'windows') {
+      return {address:v.nics[0].address.split('/')[0], note:'После установки DNS/AD DS — пример собственного DNS. Для существующего домена и до запуска службы укажите согласованный доступный DNS.'};
+    }
+    const dc = rows.find(x => x.role === 'DC' && defaultOS(x) === 'windows' && x.lan === v.lan);
+    return dc
+      ? {address:dc.nics[0].address.split('/')[0], note:`Пример: ${dc.name}, если на нём установлен DNS и проверена доступность. Для домена используйте внутренний DNS, не публичный.`}
+      : {address:'', note:'Модель не знает ваш DNS. Впишите адрес доступного внутреннего DNS; если DC в другой сети, сначала согласуйте маршрут и правила доступа.'};
+  }
+  function roleNotes(v, os) {
+    const windows = os === 'windows';
+    const notes = {
+      DC: windows
+        ? ['После настройки IP установите AD DS и DNS через Server Manager → Add Roles and Features; доменное имя, режим леса и пароль восстановления задавайте по отдельному проекту.', 'Проверьте DNS A/PTR, время, резервную копию AD и наличие второго DC.']
+        : ['Microsoft AD DS не устанавливается через Server Manager в Ubuntu. Выберите Windows для этого примера либо отдельно проектируйте совместимый каталог и DNS.'],
+      SQL: windows
+        ? ['SQL Server устанавливается отдельно. Разделите системный диск, данные, журнал и tempdb согласно проекту, настройте резервное копирование и тест восстановления.']
+        : ['Для SQL Server on Linux проверьте поддерживаемость точной версии ОС и настройте диски, память и backup по документации продукта.'],
+      '1C': ['Установите сервер 1С и подключение к SQL отдельно; проверьте лицензирование, имя SQL и правила доступа между VLAN.'],
+      File: windows
+        ? ['На диске данных создайте общие папки; отдельно настройте разрешения NTFS, share ACL и восстановление файла из backup.']
+        : ['На смонтированном диске данных настройте файловый сервис и права по документации выбранного продукта; проверьте восстановление файла.'],
+      RDP: windows
+        ? ['Для RDS проверьте лицензии и доступ через VPN или RD Gateway; не публикуйте 3389 напрямую в интернет.']
+        : ['Windows RDS не является ролью Ubuntu; для удалённого доступа выберите отдельное поддерживаемое решение и защищённый доступ.'],
+      Bitrix: ['Установите поддерживаемое окружение Bitrix отдельно. Публикуйте сайт через защищённый reverse proxy; не открывайте БД напрямую в интернет.'],
+      TP: ['Уточните назначение ТП и установите соответствующий продукт отдельно; проверьте его зависимости и backup.']
+    };
+    return notes[v.role] || [];
+  }
+  function runbook(config, result = calculate(config, 30, 'peak')) {
+    if (result.errors?.length) return {errors:result.errors};
+    const rows = result.net.rows;
+    const portGroups = [...new Map(rows.flatMap(v => v.nics).map(n => [n.pg + '@' + n.switch, n])).values()]
+      .sort((a,b) => a.pg.localeCompare(b.pg));
+    const hasTransit = rows.some(v => v.mode === 'split');
+    const preparation = [
+      'Host Client → Networking → Physical NICs: запишите имя, MAC, Link и скорость каждого физического адаптера. По кабелям и настройкам коммутатора определите, какой vmnic управляет ESXi, а какой действительно свободен. Модельные vmnic0/vmnic1/vmnic2 — не обнаруженные факты.',
+      'До изменений проверьте доступ к BMC/физической консоли и резервную копию. Не отсоединяйте единственный management uplink и не меняйте его VLAN вслепую.',
+      result.net.vmSwitch === 'vSwitch0'
+        ? 'При одном физическом NIC модель предлагает использовать существующий vSwitch0. В Networking → Virtual switches проверьте его uplink и management; не создавайте второй vSwitch0 и не переносите управление. Все сети на этом порту разделяются только логически.'
+        : `Для LAN: Networking → Virtual switches → Add standard virtual switch. В vSwitch Name введите ${result.net.vmSwitch}; в Uplink 1 выберите проверенный свободный физический порт. MTU 1500 оставьте только если он согласован по всему пути → Add. Не выбирайте занятый management uplink.`,
+      hasTransit && result.net.wanSwitch !== result.net.vmSwitch
+        ? `Для transit: повторите Add standard virtual switch, введите vSwitch Name = ${result.net.wanSwitch} и выберите другой проверенный свободный uplink → Add. Если свободного порта нет, сначала пересмотрите проект, не отсоединяйте management.`
+        : hasTransit
+          ? `Для transit модель использует тот же ${result.net.wanSwitch}: второй vSwitch и второй uplink не создаются. VLAN разделяют трафик логически, но не дают отдельный физический канал.`
+          : 'Для выбранных режимов отдельная PG-WAN к рабочей ВМ не требуется: внешний WAN подключается и настраивается на firewall по его проекту.',
+      'На физическом коммутаторе согласуйте порт и разрешённые VLAN с сетевым администратором. Для нескольких тегированных VLAN нужен правильно настроенный trunk; при одном uplink пропускная способность и отказ остаются общими.',
+      'Host Client → Networking → Port groups → Add port group: введите Name, VLAN ID и Virtual switch из таблицы ниже → Add. Повторите для каждой строки. VLAN 0 означает нетегающий порт; не выбирайте 4095 для обычной гостевой сети.',
+      'Проверьте security-политики и правила firewall: обычным ВМ не включайте Promiscuous mode, MAC address changes и Forged transmits без обоснования. Для distributed switch используйте New Distributed Port Group и согласованные uplinks.',
+      'Storage → Datastores → нужный datastore → Datastore browser → Create directory → Upload: загрузите лицензированный ISO гостевой ОС и дождитесь окончания. В vCenter: datastore → Files → Upload Files.'
+    ];
+    const vms = rows.map(v => {
+      const os = osProfile(v), lan = v.nics[0], wan = v.nics[1], dns = dnsExample(v, rows);
+      const nics = v.nics.map((n, i) => ({
+        label:n.label, pg:n.pg, vlan:n.vlan, switch:n.switch,
+        ip:n.address.split('/')[0], subnet:`10.${n.vlan}.0.0/24`, prefix:24, mask:'255.255.255.0',
+        gateway:n.gateway.startsWith('Нет') ? '' : n.gateway.split(' ')[0],
+        dns:i === 0 ? dns.address : '',
+        dnsDescription:i === 0 ? (dns.address || 'Укажите свой DNS') : 'Не добавлять второй DNS без проекта',
+      }));
+      const hostname = guestHostname(v.name, os.os);
+      const wizard = [
+        ['Name', v.name],
+        ['Compatibility', 'ESXi 8.0 virtual machine либо версия, поддерживаемая всеми целевыми хостами'],
+        ['Guest OS family', os.family], ['Guest OS version', os.version],
+        ['Select storage', 'Существующий SSD-datastore с достаточным свободным местом'],
+        ['CPU', `${v.cpu} vCPU`], ['Memory', `${v.ram} GiB`],
+        ['Hard disk 1', `${v.ssd} GB: новый виртуальный системный диск`],
+        ['Hard disk 2', v.hdd > 0 ? `${v.hdd} GB: добавить после установки ОС на проверенный datastore данных` : 'В модели не задан'],
+        ['Network adapter 1', `${lan.pg}; VMXNET3; Connect at power on`],
+        ['Network adapter 2', wan ? `${wan.pg}; VMXNET3; Connect at power on` : 'Не добавляется для выбранного режима'],
+        ['CD/DVD drive', `Datastore ISO file → ${os.iso}; Connect at power on`],
+        ['VM Options → Boot Options', 'UEFI/BIOS и Secure Boot по требованиям выбранной ОС; до установки']
+      ];
+      const creation = [
+        'Войдите в Host Client по защищённому адресу ESXi → Virtual Machines → Create / Register VM → Create a new virtual machine → Next.',
+        `На Select a name and guest OS введите Name = ${v.name}; выберите Compatibility, Guest OS family и Guest OS version по таблице ниже → Next. Имя файла ISO само по себе ОС не устанавливает.`,
+        'На Select storage выберите проверенный datastore системного диска → Next. Убедитесь, что он реально существует и имеет свободное место с запасом.',
+        `На Customize settings → Virtual Hardware введите CPU = ${v.cpu}, Memory = ${v.ram} GiB и Hard disk 1 = ${v.ssd} GB. Thin или Thick выбирайте по политике хранения; Thin требует контроля заполнения.`,
+        `В Network Adapter 1 выберите ${lan.pg}, раскройте настройки, укажите VMXNET3 (если поддерживается гостевой ОС) и Connect at power on.${wan ? ` Нажмите Add network adapter, для второго выберите ${wan.pg}, VMXNET3 и Connect at power on.` : ''}`,
+        'В CD/DVD Drive выберите Datastore ISO file → Browse → ранее загруженный ISO гостевой ОС → Select и отметьте Connect at power on.',
+        'На VM Options → Boot Options проверьте совместимый с гостевой ОС BIOS/UEFI и Secure Boot. Изменение режима после установки может нарушить загрузку.',
+        'Next → Ready to complete: проверьте значения → Finish. ВМ появится в Virtual Machines; ОС внутри ещё не установлена.'
+      ];
+      const install = os.os === 'windows' ? [
+        'Выберите ВМ → Power on → Console → Open browser console / Launch Web Console. Если появится Press any key to boot from CD/DVD, нажмите любую клавишу.',
+        'В Windows Setup выберите язык, время и клавиатуру → Next → Install now. Если требуется, введите лицензию своей редакции.',
+        'Выберите свою лицензированную редакцию Windows Server 2022 с пометкой Desktop Experience для графического интерфейса → Next → примите лицензию.',
+        `Выберите Custom: Install Windows only (advanced). Убедитесь, что выбран НОВЫЙ пустой системный виртуальный диск примерно ${v.ssd} GB. На существующей ВМ не форматируйте данные; на новом диске выберите Unallocated Space → Next.`,
+        'Дождитесь установки и перезагрузки. Не нажимайте повторно загрузку с ISO; задайте уникальный пароль Administrator. Отправьте Ctrl+Alt+Delete через меню консоли и войдите.',
+        `Server Manager → Local Server → Computer name → Change: задайте уникальное допустимое имя${hostname ? `, например ${hostname}` : ' (до 15 символов для Windows; имя ВМ из проекта может не подходить)'} и перезагрузите гостя.`,
+        'В Host Client выберите работающую ВМ → Actions → Guest OS → Install VMware Tools. В гостевой ОС откройте смонтированный DVD → setup64.exe → Complete → Finish, затем перезагрузите.',
+        'После установки Tools отключите установочный ISO: Edit settings → CD/DVD Drive → снимите подключение/Connect at power on. Если сетевого драйвера VMXNET3 нет, установите совместимые VMware Tools из ISO или проверьте поддержку ОС; не меняйте рабочий адаптер без записи его IP и MAC.'
+      ] : [
+        'Выберите ВМ → Power on → Console → Open browser console. В меню ISO выберите Try or Install Ubuntu Server.',
+        'Выберите язык, клавиатуру и обычную установку Ubuntu Server. В Network connections выберите интерфейс по MAC из настроек ВМ → Edit IPv4 → Manual.',
+        'Для каждого интерфейса введите Subnet, Address, Gateway и Name servers из таблицы NIC ниже. У общей LAN в режиме двух NIC поле Gateway оставьте пустым; на transit укажите один шлюз. Сохраните → Done.',
+        'Прокси и зеркало укажите по правилам своей сети; при отсутствии доступа к интернету используйте доступный локальный источник пакетов.',
+        `В Guided storage выберите только НОВЫЙ пустой системный виртуальный диск примерно ${v.ssd} GB → Done → проверьте итог → Continue. Не форматируйте существующий диск с данными.`,
+        `В Profile setup задайте пользователя, пароль и уникальное допустимое имя сервера${hostname ? `, например ${hostname.toLowerCase()}` : ' (имя ВМ из проекта может не подходить)'}.`,
+        'При необходимости выберите Install OpenSSH server; не открывайте SSH в интернет. Дождитесь установки → Reboot Now, затем отключите ISO в настройках CD/DVD.',
+        'Установите open-vm-tools из доступного доверенного репозитория: sudo apt update, затем sudo apt install open-vm-tools. Если сети пока нет, подключите локальный источник пакетов; проверьте службу open-vm-tools.'
+      ];
+      const disks = v.hdd > 0 ? [
+        `После установки ОС: выключите гостя в согласованное окно → Edit settings → Add hard disk → New standard hard disk. Укажите ${v.hdd} GB и проверенный datastore данных; Save.`,
+        os.os === 'windows'
+          ? 'В гостевой Windows откройте Disk Management (diskmgmt.msc). Сверьте размер и идентификатор НОВОГО пустого диска → Online → Initialize GPT → New Simple Volume → NTFS → назначьте букву, например D:. Не инициализируйте существующий диск.'
+          : 'В Ubuntu выполните lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS. Сверьте идентификатор НОВОГО пустого диска. Создавайте раздел, файловую систему и запись fstab только по утверждённому плану; форматирование стирает данные.',
+        'Проверьте свободное место, размещение данных и backup. Модель не объединяет физические SSD/HDD в один datastore или RAID.'
+      ] : ['В модели дополнительный диск HDD не задан. Для SQL и других сервисов отдельно спланируйте VMDK data/log/tempdb и хранилище.'];
+      const adapterSteps = [
+        'В Host Client: Virtual Machines → нужная ВМ → Edit settings → Virtual Hardware. В vCenter: ВМ → Edit Settings → Virtual Hardware.',
+        `Раскройте Network Adapter 1: Network/Port group = ${lan.pg}, Adapter Type = VMXNET3, Connect at power on = включено. Запишите MAC Address из этого адаптера.`,
+        wan ? `Выберите Add network adapter (в vCenter: Add New Device → Network Adapter). Для Network Adapter 2 выберите ${wan.pg}, VMXNET3 и Connect at power on. Запишите второй MAC.` : 'Для выбранного режима достаточно одного адаптера. Не добавляйте второй без сетевого проекта.',
+        'Save/OK. Включите ВМ. Если подключение изменяется у работающей ВМ, проверяйте статус Connected и совместимость hot-add; при сомнениях завершите работу гостя в согласованное окно.',
+        'По MAC сопоставьте каждый сетевой адаптер vSphere с интерфейсом внутри гостевой ОС. Имена Ethernet и ens160 могут отличаться; не выбирайте их наугад.'
+      ];
+      const guestNetwork = os.os === 'windows' ? [
+        'Откройте консоль ВМ и Windows PowerShell: Get-NetAdapter | Format-Table Name, MacAddress, Status. Сопоставьте MAC с Network Adapter 1/2 в vSphere; запишите имена Ethernet.',
+        'Win+R → ncpa.cpl → Enter. Правой кнопкой по нужному Ethernet → Properties → Internet Protocol Version 4 (TCP/IPv4) → Properties → Use the following IP address.',
+        `Для NIC 1 введите IP address = ${nics[0].ip}, Subnet mask = ${nics[0].mask}, Default gateway = ${nics[0].gateway || 'оставить пустым'} (пример из модели).`,
+        nics[0].dns ? `В Preferred DNS server введите ${nics[0].dns} только после проверки доступности DNS; ${dns.note}` : `В Preferred DNS server укажите свой доступный DNS. ${dns.note}`,
+        ...(wan ? [`Повторите Properties → IPv4 для NIC 2: IP address = ${nics[1].ip}, Subnet mask = ${nics[1].mask}, Default gateway = ${nics[1].gateway}. Не задавайте второй default gateway на NIC 1.`, 'На transit-адаптере не добавляйте второй несогласованный DNS; в Advanced → DNS отключите регистрацию адреса transit в DNS домена, если это соответствует проекту. Не включайте Network Bridge или Internet Connection Sharing.'] : []),
+        'Нажмите OK → Close. Проверьте настройки из консоли; IP-адрес гостя задаётся в Windows, а не в поле VLAN ESXi.'
+      ] : [
+        'В консоли Ubuntu выполните ip -br link: сопоставьте MAC с Network Adapter 1/2 в vSphere. Имена ens160/ens192 здесь лишь примеры.',
+        'Если ОС ещё устанавливается: Network connections → нужный интерфейс → Edit IPv4 → Manual. Заполните поля Subnet, Address, Gateway и Name servers из таблицы NIC; затем Save → Done.',
+        'Для уже установленной Ubuntu проверьте sudo netplan get и ls /etc/netplan. Изменяйте только конфигурацию, которая действительно управляет этими интерфейсами: несколько YAML объединяются, а cloud-init может переписать настройки. Сохраните резервную копию.',
+        'YAML ниже — пример, не готовый конфиг: замените LAN_INTERFACE/WAN_INTERFACE реальными именами, задайте работающий DNS и учтите действующий renderer. Не создавайте второй конкурирующий файл для тех же интерфейсов.',
+        'Имея доступ к консоли, выполните sudo netplan generate, затем sudo netplan try. Подтвердите изменения только после проверки связи. При ошибке верните резервную копию файла; не запускайте netplan apply после отката.'
+      ];
+      const yaml = [
+        '# Пример: заменить имена интерфейсов и проверить DNS, адреса и маршруты',
+        'network:', '  version: 2', '  renderer: networkd', '  ethernets:',
+        '    LAN_INTERFACE:', '      dhcp4: false', `      addresses: [${nics[0].ip}/24]`
+      ];
+      if (nics[0].gateway) yaml.push('      routes:', '        - to: default', `          via: ${nics[0].gateway}`);
+      if (nics[0].dns) yaml.push('      nameservers:', `        addresses: [${nics[0].dns}]`);
+      else yaml.push('      # Добавьте nameservers с адресом вашего действующего DNS');
+      if (wan) yaml.push('    WAN_INTERFACE:', '      dhcp4: false', `      addresses: [${nics[1].ip}/24]`, '      routes:', '        - to: default', `          via: ${nics[1].gateway}`);
+      const checks = os.os === 'windows' ? [
+        'Get-NetAdapter | Format-Table Name, MacAddress, Status',
+        'Get-NetIPConfiguration',
+        'Get-NetRoute -DestinationPrefix 0.0.0.0/0',
+        `Test-NetConnection ${nics[0].gateway || nics[1].gateway} # пример шлюза; ICMP может быть запрещён`
+      ] : [
+        'ip -br link', 'ip -br address', 'ip route show default', 'resolvectl status',
+        `ping -c 3 ${nics[0].gateway || nics[1].gateway} # пример шлюза; ICMP может быть запрещён`
+      ];
+      return {id:v.id, name:v.name, role:v.role, mode:v.mode, os, wizard, creation, install, disks, adapterSteps, guestNetwork, nics, dns, linux:yaml.join('\n'), checks, roleNext:roleNotes(v,os.os)};
+    });
+    const zones = rows.map(v => ({
+      id:v.id, name:v.name, mode:v.mode, wan:v.internet,
+      lan:v.mode === 'split' ? 'Общая LAN, у ВМ нет default gateway на NIC 1' : `${v.nics[0].pg}: ${v.nics[0].gateway.split(' ')[0]}/24 — пример LAN-интерфейса firewall`,
+      transit:v.mode === 'split' ? `${v.nics[1].pg}: ${v.nics[1].gateway.split(' ')[0]}/24 — пример transit-интерфейса firewall` : 'На рабочей ВМ transit NIC нет; отдельный WAN-интерфейс firewall — по проекту',
+    }));
+    return {preparation, portGroups, vms, zones};
+  }
+  function runbookMarkdown(config, result = calculate(config, 30, 'peak'), {vmId} = {}) {
+    let rb = runbook(config, result); if (rb.errors) return '';
+    if (vmId !== undefined) {
+      const selected = rb.vms.filter(v => v.id === vmId);
+      if (!selected.length) return '';
+      const groups = new Set(selected.flatMap(v => v.nics.map(n => n.pg + '@' + n.switch)));
+      rb = {...rb, vms:selected, zones:rb.zones.filter(z => z.id === vmId), portGroups:rb.portGroups.filter(n => groups.has(n.pg + '@' + n.switch))};
+    }
+    const cell = x => String(x ?? '').replaceAll('|','\\|').replace(/[\r\n]+/g,' ');
+    const L = ['', '## 5. Пошаговый план: гостевые ВМ и сетевые карты', '',
+      '> IP, VLAN, DNS, datastore, uplink и названия ISO — учебные примеры. Проверьте их до внедрения. Снимки в приложении показаны рядом с шагами; ссылки на источники ниже.',
+      '', '### 5.1. Подготовьте ISO и сети'];
+    rb.preparation.forEach((step,i) => L.push(`${i+1}. ${step}`));
+    L.push('', '| Port group | VLAN примера | vSwitch примера | Назначение |', '|---|---:|---|---|');
+    for (const n of rb.portGroups) L.push(`| ${cell(n.pg)} | ${n.vlan} | ${cell(n.switch)} | ${cell(n.label)} |`);
+    const pushSteps = items => items.forEach((x,i) => L.push(`${i+1}. ${x}`));
+    for (const [i,v] of rb.vms.entries()) {
+      L.push('', `### 5.${i+2}. ${v.name} · ${v.role} · ${MODES[v.mode].name}`, '', `ОС в примере: ${v.os.label}.`, '', '#### 1. Создайте ВМ');
+      pushSteps(v.creation);
+      L.push('', '| Поле | Пример значения |', '|---|---|');
+      for (const [k,val] of v.wizard) L.push(`| ${cell(k)} | ${cell(val)} |`);
+      L.push('', '#### 2. Установите гостевую ОС'); pushSteps(v.install);
+      L.push('', '#### 3. Дополнительный диск'); pushSteps(v.disks);
+      L.push('', '#### 4. Сетевые карты в vSphere'); pushSteps(v.adapterSteps);
+      L.push('', '| Адаптер | Port group | VLAN | Адрес/маска примера | Шлюз примера | DNS |', '|---|---|---:|---|---|---|');
+      for (const n of v.nics) L.push(`| ${cell(n.label)} | ${cell(n.pg)} | ${n.vlan} | ${n.ip}/${n.prefix} (${n.mask}) | ${n.gateway||'не указывать'} | ${cell(n.dnsDescription)} |`);
+      L.push('', `DNS: ${v.dns.note}`, '', '#### 5. Настройте IP внутри гостевой ОС'); pushSteps(v.guestNetwork);
+      if (v.os.os === 'linux') L.push('', 'Netplan: только пример, замените имена интерфейсов и DNS:', '```yaml', v.linux, '```');
+      L.push('', '#### 6. Проверьте из гостевой ОС', v.os.os === 'windows' ? '```powershell' : '```bash', ...v.checks, '```',
+        'Проверьте DNS своим доменным именем, доступ к нужным сервисам, отсутствие доступа в запрещённые VLAN и внешний адрес через согласованный способ. Общее L2-соединение split-ВМ не является полной изоляцией.',
+        '', '#### Дополнительно по роли');
+      for (const x of v.roleNext) L.push('- '+x);
+    }
+    L.push('', `### 5.${rb.vms.length+2}. Firewall и подключение к провайдерам`,
+      'Ни vSwitch, ни port group не создают интернет, NAT, маршруты или изоляцию L3. Укажите свои интерфейсы, адреса провайдеров, default route, NAT и ACL на выбранном firewall.',
+      '', '| ВМ | Условный WAN | LAN на firewall | Transit на firewall |', '|---|---|---|---|');
+    for (const z of rb.zones) L.push(`| ${cell(z.name)} | ${cell(z.wan)} | ${cell(z.lan)} | ${cell(z.transit)} |`);
+    L.push('', 'Для каждого WAN требуется собственная согласованная политика маршрутизации; запретите нежелательный доступ между зонами. Конкретные поля зависят от модели firewall.',
+      '', '### Источники реальных снимков',
+      '- ESXi 8 Host Client, создание ВМ: https://www.mobinhost.com/mag/how-to-create-virtual-machine-on-vmware-esxi/',
+      '- Host Client, port group и добавление сетевого адаптера: https://support.us.ovhcloud.com/hc/en-us/articles/360007000479-How-to-use-VLANs-with-multiple-VMware-ESXi-hosts',
+      '- Host Client, загрузка ISO: https://support.us.ovhcloud.com/hc/en-us/articles/360003263859-How-to-create-a-VM-in-VMware-ESXi',
+      '- vSphere Client, тип адаптера и MAC: https://www.nakivo.com/blog/locating-vmware-vms-by-ip-or-mac-address/',
+      '- vSphere Client, ISO и аппаратные настройки: https://woshub.com/create-virtual-machine-vmware/',
+      '- Windows Server 2022: https://suay.site/?p=1421 и https://petri.com/install-windows-server-2022/',
+      '- Windows Server 2022 IPv4: https://serverdecode.com/assign-static-ip-address-windows-server/',
+      '- Ubuntu Server 22.04: https://ahelpme.com/linux/ubuntu/installation-of-base-ubuntu-server-22-04-lts/',
+      '', 'В Markdown включены ссылки, а не сами картинки; офлайн-скриншоты и их подписи находятся в приложении.', '');
+    return L.join('\n');
+  }
+
   function planMarkdown(config, result = calculate(config,30,'peak')) {
     if(result.errors?.length) return '# Ошибки\n'+result.errors.join('\n');
     const lines=['# ESXi Atlas · план лабораторного стенда','',`Создан: ${new Date().toISOString().slice(0,10)}`,'','> Расчётная модель, не benchmark. Проверьте совместимость, лицензии, отказоустойчивость и реальные пики. Приложение не выполняет команды на ESXi.','',
@@ -182,28 +407,12 @@
     for(const v of result.items) lines.push(`| ${v.name.replaceAll('|','/')} | ${v.role} | ${v.cpu} | ${v.ram} | ${v.ssd} | ${v.hdd} | ${v.users} | ${MODES[v.mode]?.name||'Management'} |`);
     lines.push('','## 4. Сети и интернет');
     for(const v of result.net.rows){lines.push(`### ${v.name}`,`- ${MODES[v.mode].description}`,`- LAN VLAN ${v.lan}; интернет: ${v.internet}.`);for(const n of v.nics)lines.push(`- ${n.label}: ${n.pg}, VLAN ${n.vlan}, ${n.switch}, VMXNET3; адрес примера ${n.address}; шлюз: ${n.gateway}.`);}
-    lines.push('',`Management: vSwitch0 / vmnic0, PG-MGMT, отдельный management VLAN (укажите свой), VMkernel vmk0. VM LAN: ${result.net.vmSwitch}. WAN: ${result.net.wanSwitch} / ${result.net.wanUplink}.`,'WAN VLAN — транзитные сегменты до VRF firewall, а не подключение серверов напрямую к провайдеру. Для каждого выделенного WAN: своя VRF, маршрут по умолчанию, NAT и правила. В общей LAN у split-ВМ шлюза нет. Запретите transit→LAN и LAN→WAN transit, кроме необходимых разрешений.',
+    lines.push('',`Условный пример management: vSwitch0 / vmnic0, PG-MGMT и VMkernel vmk0. Проверьте реальные имена и VLAN; модель не обнаруживает фактические порты. VM LAN: ${result.net.vmSwitch}. Если используется transit для split: ${result.net.wanSwitch} / ${result.net.wanUplink}.`,'PG-WAN для split — внутренний транзит до firewall, а не публичный IP провайдера на сервере. У isolated-ВМ второго transit-адаптера нет; её WAN-номер — логический идентификатор, не VLAN. Для каждого выделенного WAN настройте маршрут, NAT и правила на firewall. В общей LAN у split-ВМ шлюза нет; запретите нежелательный транзит между зонами.',
       'Одинаковый VLAN ID на разных изолированных коммутаторах не объединяет сети автоматически. Один физический uplink может нести несколько VLAN, но остаётся общей полосой и точкой отказа. Несколько default gateway в одной плоской подсети — не решение.',
-      '', '## 5. Порядок настройки ESXi 8 / vCenter 8',
-      '1. Проверить сервер, контроллеры и NIC по Broadcom Compatibility Guide; подготовить legal ISO ESXi 8 и VCSA 8 compatible build, backup и доступ к консоли.',
-      '2. Настроить BIOS/UEFI, виртуализацию, контроллер и отдельный boot-диск. Установка может уничтожить данные выбранного диска.',
-      '3. Установить ESXi, задать root password, настроить management IP/VLAN/DNS/NTP; проверить вход в Host Client и доступ к консоли восстановления.',
-      '4. Создать VMFS-datastore на проверенном свободном устройстве. Не удалять неизвестные разделы. Настроить резерв места и мониторинг.',
-      '5. Создать стандартные vSwitch и порт-группы по плану. Сначала подготовить физический trunk; management переносить только с консольным доступом.',
-      '6. Развернуть VCSA 8 в два этапа; проверить прямую/обратную DNS-запись, время, SSO и лицензии. Для Tiny заложить 2 vCPU / 14 GiB / 579 GB default storage.',
-      '7. Создать Datacenter и Cluster, добавить хост, назначить лицензии и роли. Не открывать management/SSH в интернет.',
-      '8. Создать ВМ, установить гостевые ОС и VMware Tools, настроить диски и VMXNET3 по таблицам. Сначала DC/DNS, затем SQL, 1С, файловые и прикладные службы.',
-      '9. Настроить firewall/VRF/NAT и правила только необходимых потоков. Проверить связность каждой пары сетей и отсутствие нежелательного транзита.',
-      '10. Настроить backup ВМ и отдельно SQL/AD, репликацию/второй DC по требованиям, оповещения, журнал сроков паролей и сертификатов. Выполнить тест восстановления.',
-      '', '## 6. Интерфейс vSphere',
-      'Хост → Configure → Networking → Virtual switches: проверить switch/uplink; Add Networking → Virtual Machine Port Group for a Standard Switch: имя и VLAN из таблицы.',
-      'ВМ → Edit Settings → Add Network Adapter → VMXNET3 → нужная порт-группа. Для split добавить второй адаптер; внутри гостевой ОС убрать default gateway на общей LAN.',
-      'ВМ → Edit Settings → CPU/RAM: начать с таблицы; Shares relative priority, Reservation guarantee, Limit верхняя граница. Не выставлять произвольные MHz limits. Не резервировать всю RAM хоста.',
-      'Названия пунктов зависят от update-релиза. Реальные скриншоты с источниками и импорт снимков вашего стенда доступны в приложении.',
-      '', '## 7. Предупреждения');
+      runbookMarkdown(config,result), '## 6. Предупреждения');
     for(const w of result.warnings)lines.push(`- **${w.title}.** ${w.text}`);
-    lines.push('','## 8. Проверка после настройки','- DC: DNS A/PTR, AD replication, время; SQL: backup/restore и задержки диска; 1С: тестовый вход и регламентные задания; RDP: сессии через защищённый шлюз; Bitrix: HTTPS/WAF; File: ACL и восстановление файла.', '- Провести замер рабочего пика, зафиксировать CPU Ready/RAM ballooning/datastore latency/IOPS/throughput. Не использовать этот расчёт как результат измерения.', '- Проверить отказ uplink, восстановление backup и консолидацию на тестовой ВМ в согласованное окно. Не удалять VMDK вручную.');
+    lines.push('','## 7. Проверка после настройки','- DC: DNS A/PTR, AD replication, время; SQL: backup/restore и задержки диска; 1С: тестовый вход и регламентные задания; RDP: сессии через защищённый шлюз; Bitrix: HTTPS/WAF; File: ACL и восстановление файла.', '- Провести замер рабочего пика, зафиксировать CPU Ready/RAM ballooning/datastore latency/IOPS/throughput. Не использовать этот расчёт как результат измерения.', '- Проверить отказ uplink, восстановление backup и консолидацию на тестовой ВМ в согласованное окно. Не удалять VMDK вручную.');
     return lines.join('\n');
   }
-  return { ROLES, LIMITS, MODES, defaultConfig, newVM, validate, topology, calculate, optimize, commandCatalog, planMarkdown, round, clamp };
+  return { ROLES, LIMITS, MODES, defaultConfig, newVM, validate, topology, calculate, optimize, commandCatalog, planMarkdown, runbook, runbookMarkdown, round, clamp };
 });

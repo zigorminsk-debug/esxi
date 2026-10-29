@@ -25,6 +25,9 @@ import android.widget.Toast;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -35,10 +38,13 @@ public final class MainActivity extends Activity {
     private static final String HOME = ORIGIN + "/assets/index.html";
     private static final Set<String> EXTERNAL_HOSTS = new HashSet<>(Arrays.asList(
         "github.com", "techdocs.broadcom.com", "knowledge.broadcom.com", "claudiokuenzler.com",
-        "vcloud-lab.com", "www.starwindsoftware.com", "t.me", "wa.me", "www.nakivo.com"));
+        "vcloud-lab.com", "www.starwindsoftware.com", "t.me", "wa.me", "www.nakivo.com",
+        "support.us.ovhcloud.com", "woshub.com", "www.mobinhost.com", "suay.site",
+        "petri.com", "serverdecode.com", "ahelpme.com"));
     private WebView web;
     private UpdateManager updates;
     private ValueCallback<Uri[]> fileCallback;
+    private String pendingExportText;
     private long lastUpdateRequest;
     private final Runnable backTimeout = () -> { if (fileCallback != null) { fileCallback.onReceiveValue(null); fileCallback = null; } };
 
@@ -108,6 +114,16 @@ public final class MainActivity extends Activity {
         super.onActivityResult(request,result,data);
         if(request==41)finishFiles(WebChromeClient.FileChooserParams.parseResult(result,data));
         if(request==42)updates.installPending();
+        if(request==43){
+            String text=pendingExportText; pendingExportText=null;
+            if(result==RESULT_OK && data!=null && data.getData()!=null && text!=null){
+                try(OutputStream output=getContentResolver().openOutputStream(data.getData(),"w")){
+                    if(output==null)throw new IOException("Output stream unavailable");
+                    output.write(text.getBytes(StandardCharsets.UTF_8));
+                    Toast.makeText(this,"Файл сохранён",Toast.LENGTH_SHORT).show();
+                }catch(Exception e){Toast.makeText(this,"Не удалось сохранить файл",Toast.LENGTH_LONG).show();}
+            }
+        }
     }
     private void openAllowed(Uri uri) {
         try {
@@ -126,6 +142,21 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void shareText(String text) {
             if(text==null||text.length()>200000)return;
             runOnUiThread(()->{Intent send=new Intent(Intent.ACTION_SEND);send.setType("text/plain");send.putExtra(Intent.EXTRA_TEXT,text);startActivity(Intent.createChooser(send,"Отправить команду или план"));});
+        }
+        @JavascriptInterface public boolean saveTextFile(String name,String text){
+            if(name==null || text==null || text.length()>1000000 ||
+               !(name.equals("esxi-atlas-plan.md") || name.equals("esxi-atlas-project.json")))return false;
+            runOnUiThread(()->{
+                if(pendingExportText!=null){Toast.makeText(MainActivity.this,"Сначала завершите сохранение файла",Toast.LENGTH_SHORT).show();return;}
+                pendingExportText=text;
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType(name.endsWith(".json") ? "application/json" : "text/markdown");
+                intent.putExtra(Intent.EXTRA_TITLE,name);
+                try{startActivityForResult(intent,43);}
+                catch(Exception e){pendingExportText=null;Toast.makeText(MainActivity.this,"Не удалось открыть выбор места сохранения",Toast.LENGTH_LONG).show();}
+            });
+            return true;
         }
         @JavascriptInterface public void openExternal(String url){if(url!=null&&url.length()<8192)runOnUiThread(()->openAllowed(Uri.parse(url)));}
         @JavascriptInterface public void checkUpdates(){if(System.currentTimeMillis()-lastUpdateRequest<5000)return;lastUpdateRequest=System.currentTimeMillis();updates.check(false);}

@@ -1,6 +1,6 @@
 {
   "name": "esxi-atlas",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Offline ESXi 8 / vCenter 8 field guide and resource planning lab",
   "private": true,
   "author": "ESXi Atlas contributors",

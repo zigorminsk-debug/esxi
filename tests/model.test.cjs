@@ -67,4 +67,56 @@ test('No accidental non-Russian CJK text in original content',()=>{
 
 test('Optimizer never emits fractional or invalid VM resources on a tiny host',()=>{const c=M.defaultConfig();c.host.ram=12;c.host.cores=10;const o=M.optimize(c);assert.deepEqual(M.validate(o),[]);});
 
+test('Runbook personalizes wizard, guest instructions and network modes', () => {
+ const c=M.defaultConfig();c.vms=c.vms.slice(0,3);c.vms[0].mode='shared';c.vms[1].mode='isolated';c.vms[2].mode='split';c.vms[2].os='linux';c.vms[2].cpu=6;c.vms[2].ram=16;
+ const rb=M.runbook(c);assert.equal(rb.vms.length,3);
+ assert.deepEqual(rb.vms.map(v=>v.nics.length),[1,1,2]);
+ assert.deepEqual(rb.portGroups.map(n=>n.pg).sort(),['PG-LAN-10','PG-LAN-101','PG-WAN-202'].sort());
+ const shared=rb.vms[0],isolated=rb.vms[1],split=rb.vms[2];
+ assert.equal(shared.nics[0].gateway,'10.10.0.1');
+ assert.equal(isolated.nics[0].gateway,'10.101.0.1');
+ assert.equal(isolated.dns.address,'');assert.match(isolated.dns.note,/Модель не знает ваш DNS/);
+ assert.equal(split.nics[0].gateway,'');assert.equal(split.nics[1].gateway,'10.202.0.1');
+ assert.match(split.linux,/addresses: \[10\.10\.0\.12\/24\]/);
+ assert.match(split.linux,/via: 10\.202\.0\.1/);assert.doesNotMatch(split.linux,/via: 10\.10\.0\.1/);
+ assert.ok(split.wizard.some(([k,v])=>k==='CPU'&&v==='6 vCPU'));assert.ok(split.wizard.some(([k,v])=>k==='Memory'&&v==='16 GiB'));
+ assert.match(rb.zones[1].transit,/нет/);assert.match(rb.zones[2].transit,/PG-WAN-202/);
+ assert.ok(shared.guestNetwork.some(x=>x.includes('ncpa.cpl')));assert.ok(split.guestNetwork.some(x=>x.includes('netplan try')));
+ const md=M.planMarkdown(c);assert.match(md,/Источники реальных снимков/);assert.match(md,/Ubuntu Server 22\.04/);assert.doesNotMatch(md,/undefined|NaN|New-NetIPAddress|sudo netplan apply/);
+});
+test('Runbook respects disabled VMs and accepts older projects without OS field',()=>{
+ const c=M.defaultConfig();delete c.vms[0].os;delete c.vms[5].os;assert.deepEqual(M.validate(c),[]);
+ assert.equal(M.runbook(c).vms[0].os.os,'windows');assert.equal(M.runbook(c).vms[5].os.os,'linux');
+ c.vms[0].enabled=false;assert.equal(M.runbook(c).vms.length,6);assert.doesNotMatch(M.planMarkdown(c),/### 5\.2\. DC-00/);
+ c.vms[1].os='macos';assert.ok(M.validate(c).some(x=>x.includes('ОС должна')));
+});
+test('No default DNS gateway is invented and hostname guidance checks guest restrictions',()=>{
+ const c=M.defaultConfig();c.vms[0].enabled=false;c.vms[1].name='invalid name with spaces';
+ const vm=M.runbook(c).vms[0];assert.equal(vm.dns.address,'');assert.match(vm.dns.note,/укажите|впишите/i);
+ assert.ok(vm.install.some(x=>x.includes('имя ВМ из проекта может не подходить')));
+ const d=M.defaultConfig();d.vms[1].name='NAME|WITH|PIPE';const md=M.planMarkdown(d);assert.ok(md.includes('NAME\\|WITH\\|PIPE'));
+});
+
+test('Forty enabled VMs produce stable valid addresses and complete plans',()=>{
+ const c=M.defaultConfig();c.vms=Array.from({length:40},(_,i)=>({...M.newVM('TP',i),mode:'split'}));
+ const rb=M.runbook(c);assert.equal(rb.vms.length,40);assert.equal(rb.portGroups.length,41);
+ assert.equal(rb.vms[39].nics[1].vlan,239);assert.equal(rb.vms[39].nics[1].ip,'10.239.0.49');
+ assert.match(M.planMarkdown(c),/TP-39/);assert.doesNotMatch(M.planMarkdown(c),/undefined|NaN/);
+});
+
+test('Physical NIC count determines safe vSwitch preparation without moving management',()=>{
+ const c=M.defaultConfig();c.vms[0].mode='split';c.host.nics=1;
+ let steps=M.runbook(c).preparation.join('\n');assert.match(steps,/существующий vSwitch0/);assert.match(steps,/второй vSwitch и второй uplink не создаются/);
+ c.host.nics=2;steps=M.runbook(c).preparation.join('\n');assert.match(steps,/vSwitch Name введите vSwitch-LAN/);assert.match(steps,/тот же vSwitch-LAN/);
+ c.host.nics=3;steps=M.runbook(c).preparation.join('\n');assert.match(steps,/vSwitch Name = vSwitch-WAN/);assert.match(steps,/другой проверенный свободный uplink/);
+ c.vms[0].mode='isolated';steps=M.runbook(c).preparation.join('\n');assert.match(steps,/PG-WAN к рабочей ВМ не требуется/);
+});
+
+test('A per-VM share keeps original subnet and DNS without the other VM sections',()=>{
+ const c=M.defaultConfig();c.vms[1].mode='split';const r=M.calculate(c);const text=M.runbookMarkdown(c,r,{vmId:c.vms[1].id});
+ assert.match(text,/### 5\.2\. SQL-01/);assert.doesNotMatch(text,/### 5\.2\. DC-00/);
+ assert.match(text,/PG-WAN-201/);assert.match(text,/10\.10\.0\.10/);assert.doesNotMatch(text,/### 5\.3\. 1C-02/);
+ assert.equal(M.runbookMarkdown(c,r,{vmId:'missing'}),'');
+});
+
 test('Disabling a VM does not renumber another VM VLAN plan',()=>{const c=M.defaultConfig();c.vms[0].mode='isolated';c.vms[1].mode='isolated';const before=M.topology(c).rows[1].lan;c.vms[0].enabled=false;assert.equal(M.topology(c).rows[0].lan,before);});
