@@ -2,11 +2,11 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="app-version" content="1.0.2">
+<meta name="app-version" content="1.1.0">
 <meta name="theme-color" content="#101c2d"><meta name="description" content="ESXi 8 и vCenter 8: учебник, моделирующий стенд, расчёт ресурсов и независимых сетей. Работает офлайн.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>ESXi Atlas — учебник и лаборатория</title>
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="topology.css">
 </head>
 <body>
 <a class="skip-link" href="#main">Перейти к содержимому</a>
@@ -35,5 +35,5 @@
 <dialog id="search-dialog" class="search-dialog"><div class="dialog-head"><span data-icon="search"></span><input id="search-input" type="search" placeholder="Снапшоты, VLAN, пароль, SQL…" aria-label="Поиск по учебнику"><button class="text-button" id="search-close">Закрыть</button></div><div id="search-results"></div><div class="search-hint">Поиск по главам, ролям и командам · Enter — открыть первый результат</div></dialog>
 <dialog id="app-dialog" class="app-dialog"><div id="dialog-content"></div></dialog>
 <input type="file" accept="image/png,image/jpeg,image/webp" id="screenshot-input" hidden>
-<script src="vendor/model.js"></script><script src="vendor/content.js"></script><script src="app.js"></script>
+<script src="vendor/model.js"></script><script src="vendor/topology.js"></script><script src="vendor/gifenc.js"></script><script src="vendor/content.js"></script><script src="topology-export.js"></script><script src="topology-editor.js"></script><script src="app.js"></script>
 </body></html>

@@ -21,11 +21,17 @@ test('Documented screenshot sources are allowed in both native shells', () => {
   }
 });
 
-test('Android text export uses the system document picker and UTF-8', () => {
+test('Android exports use the system document picker and bounded, typed binary files', () => {
   const android = read('android/app/src/main/java/ai/arena/esxiatlas/MainActivity.java');
   assert.match(android, /@JavascriptInterface public boolean saveTextFile/);
+  assert.match(android, /@JavascriptInterface public boolean saveBinaryFile/);
   assert.match(android, /Intent\.ACTION_CREATE_DOCUMENT/);
   assert.match(android, /StandardCharsets\.UTF_8/);
   assert.match(android, /esxi-atlas-plan\.md/);
   assert.match(android, /esxi-atlas-project\.json/);
+  assert.match(android, /esxi-atlas-topology\.gif/);
+  assert.match(android, /esxi-atlas-topology\.pdf/);
+  assert.match(android, /MAX_BINARY_EXPORT = 12 \* 1024 \* 1024/);
+  assert.match(android, /pending_export/); // private temporary file survives activity recreation
+  assert.match(android, /validGif/);assert.match(android, /validPdf/);
 });

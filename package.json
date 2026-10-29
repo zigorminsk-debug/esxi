@@ -1,6 +1,6 @@
 {
   "name": "esxi-atlas",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Offline ESXi 8 / vCenter 8 field guide and resource planning lab",
   "private": true,
   "author": "ESXi Atlas contributors",
@@ -17,13 +17,16 @@
     "release:check": "node scripts/release-manifest.cjs --check"
   },
   "dependencies": {
-    "electron-updater": "6.8.11"
+    "electron-updater": "6.8.11",
+    "gifenc": "1.0.3"
   },
   "devDependencies": {
+    "@fontsource/inter": "5.3.0",
     "@playwright/test": "1.56.1",
     "electron": "45.1.0",
     "electron-builder": "26.18.0",
-    "@fontsource/inter": "5.3.0"
+    "gifuct-js": "2.1.2",
+    "pdf-lib": "1.17.1"
   },
   "build": {
     "appId": "ai.arena.esxiatlas",
