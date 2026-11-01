@@ -106,7 +106,11 @@ jobs:
           retention-days: 30
 
   publish-prerelease:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    # workflow_dispatch also requires this file on the default branch. The
+    # explicit push marker supports a gated prerelease from the open PR branch.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/arena/') && contains(github.event.head_commit.message, '[publish-raid-0.2.0]'))
     needs: [go-tests, browser-tests, windows-build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10

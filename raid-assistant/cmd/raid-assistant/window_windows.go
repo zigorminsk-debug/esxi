@@ -25,6 +25,7 @@ var (
 	kernel32        = syscall.NewLazyDLL("kernel32.dll")
 	messageBox      = user32.NewProc("MessageBoxW")
 	getOpenFileName = comdlg32.NewProc("GetOpenFileNameW")
+	fileDialogError = comdlg32.NewProc("CommDlgExtendedError")
 )
 
 func alert(text string) {
@@ -148,31 +149,35 @@ func runWindow(a *app.App) error {
 	smoke := os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") == "1"
 	smokeOK := false
 	if smoke {
-		if err := w.Bind("goSmokeReady", func(valid bool) {
+		if err := w.Bind("goSmokeReady", func(valid bool, stage string) {
 			smokeOK = valid
-			selfTestTrace("smoke callback reached")
+			selfTestTrace("smoke callback: " + stage)
 			w.Terminate()
 		}); err != nil {
 			return err
 		}
 		w.Init(`window.addEventListener('DOMContentLoaded', async function(){
-		  let valid = false;
+		  let valid = false, stage = 'validation';
 		  try {
 		    let invalidRejected = false, sshRejected = false, monitorRejected = false;
 		    try { await window.goCertStart('https://u:p@invalid.example'); } catch (_) { invalidRejected = true; }
 		    try { await window.goSSHReadStart({user:'test',password:'not-a-credential',kind:'storcli',consent:true}); } catch (_) { sshRejected = true; }
 		    try { await window.goMonitorStart({mode:'ssh',interval:60}); } catch (_) { monitorRejected = true; }
+		    stage = 'read components and history';
 		    const catalog = await window.goComponents(), history = await window.goHistory();
 		    const monitor = await window.goMonitor(), shot = await window.goScreenshotLoad();
+		    stage = 'save profile';
 		    const saved = await window.goProfileSave({name:'CI smoke',address:'192.0.2.111',user:'fixture'});
+		    stage = 'read and delete profile';
 		    const profiles = await window.goProfiles();
 		    await window.goProfileDelete('192.0.2.111');
+		    stage = 'validate results';
 		    valid = invalidRejected && sshRejected && monitorRejected && Array.isArray(catalog) && catalog.length >= 20 &&
 		      Array.isArray(history) && !monitor.running && shot && Array.isArray(saved) &&
 		      profiles.some(p => p.address === '192.0.2.111:443' && p.user === 'fixture' && !('password' in p)) &&
 		      !!document.querySelector('#connectionForm') && !!document.querySelector('#raid') && !!document.querySelector('#extensions') && !window.RAID_DEMO;
-		  } catch (_) { valid = false; }
-		  await window.goSmokeReady(valid);
+		  } catch (e) { valid = false; stage += ': ' + String(e).slice(0, 200); }
+		  await window.goSmokeReady(valid, stage);
 		});`)
 	}
 	selfTestTrace("bindings registered")
@@ -242,8 +247,11 @@ func chooseDataFile(owner uintptr, kind string) (string, error) {
 	runtime.KeepAlive(buffer)
 	runtime.KeepAlive(title)
 	if ret == 0 {
-		return "", nil
-	} // cancel; no path is sent from web content
+		if code, _, _ := fileDialogError.Call(); code != 0 {
+			return "", errors.New("Не удалось открыть системный диалог выбора файла")
+		}
+		return "", nil // cancel; no path is sent from web content
+	}
 	return syscall.UTF16ToString(buffer), nil
 }
 
