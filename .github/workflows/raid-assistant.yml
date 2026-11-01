@@ -58,6 +58,6 @@ jobs:
             await browser.close();
           })().catch(e => { console.error(e); process.exit(1); });
           JS
-          node /tmp/probe-page.cjs > /tmp/vendor-results.json
+          node /tmp/probe-page.cjs > /tmp/vendor-results.json 2> /tmp/vendor-error || cp /tmp/vendor-error /tmp/vendor-results.json
           BLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" -f content="$(base64 -w0 /tmp/vendor-results.json)" -f encoding=base64 --jq .sha)
           gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context=vendor-page-review -f description="$BLOB"
