@@ -95,6 +95,7 @@ func NewWindow(debug bool, window unsafe.Pointer) WebView {
 
 // NewWithOptions creates a new webview using the provided options.
 func NewWithOptions(options WebViewOptions) WebView {
+	edge.RaidTrace("NewWithOptions entered")
 	w := &webview{}
 	w.bindings = map[string]interface{}{}
 	w.autofocus = options.AutoFocus
@@ -106,6 +107,7 @@ func NewWithOptions(options WebViewOptions) WebView {
 
 	w.browser = chromium
 	w.mainthread, _, _ = w32.Kernel32GetCurrentThreadID.Call()
+	edge.RaidTrace("creating Win32 window")
 	if !w.CreateWithOptions(options.WindowOptions) {
 		return nil
 	}
@@ -267,6 +269,7 @@ func (w *webview) Create(debug bool, window unsafe.Pointer) bool {
 }
 
 func (w *webview) CreateWithOptions(opts WindowOptions) bool {
+	edge.RaidTrace("CreateWithOptions entered")
 	var hinstance windows.Handle
 	_ = windows.GetModuleHandleEx(0, nil, &hinstance)
 
@@ -317,6 +320,7 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		posY = w32.CW_USEDEFAULT
 	}
 
+	edge.RaidTrace("calling CreateWindowExW")
 	w.hwnd, _, _ = w32.User32CreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
@@ -331,12 +335,14 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		uintptr(hinstance),
 		0,
 	)
+	edge.RaidTrace("CreateWindowExW returned")
 	setWindowContext(w.hwnd, w)
 
 	_, _, _ = w32.User32ShowWindow.Call(w.hwnd, w32.SWShow)
 	_, _, _ = w32.User32UpdateWindow.Call(w.hwnd)
 	_, _, _ = w32.User32SetFocus.Call(w.hwnd)
 
+	edge.RaidTrace("embedding WebView2")
 	if !w.browser.Embed(w.hwnd) {
 		return false
 	}

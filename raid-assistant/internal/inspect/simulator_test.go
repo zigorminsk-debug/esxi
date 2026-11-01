@@ -139,3 +139,33 @@ func TestSimulatorRejectsVCenterBeforeLogin(t *testing.T) {
 		}
 	}
 }
+
+func TestSimulatorRejectsWrongPinBeforeAnySOAP(t *testing.T) {
+	m := simulator.ESX()
+	if err := m.Create(); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Remove()
+	m.Service.TLS = &tls.Config{}
+	server := m.Service.NewServer()
+	defer server.Close()
+	var mu sync.Mutex
+	var calls []string
+	m.Map().Handler = func(_ *simulator.Context, method *simulator.Method) (mo.Reference, types.BaseMethodFault) {
+		mu.Lock()
+		calls = append(calls, method.Name)
+		mu.Unlock()
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := Scan(ctx, Request{Address: server.URL.Host, User: "user", Password: "pass", Pin: strings.Repeat("0", 64)})
+	if err == nil {
+		t.Fatal("wrong pin was accepted")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 0 {
+		t.Fatalf("SOAP requests before certificate validation: %v", calls)
+	}
+}

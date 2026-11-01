@@ -201,9 +201,11 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 	} else {
 		check("Режим обслуживания", "Не включён", "info", "Потребность определяется README и результатом dry-run; подготовьте окно обслуживания.")
 	}
+	sshFound, lwaFound := false, false
 	if mh.Config != nil && mh.Config.Service != nil {
 		for _, s := range mh.Config.Service.Service {
 			if s.Key == "TSM-SSH" {
+				sshFound = true
 				value := "Остановлен"
 				if s.Running {
 					value = "Запущен"
@@ -211,6 +213,7 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 				check("SSH на хосте", value, "info", "Программа не включает SSH; при необходимости включите его вручную и выключите после работы.")
 			}
 			if strings.EqualFold(s.Key, "lwmd") {
+				lwaFound = true
 				value := "Остановлена"
 				if s.Running {
 					value = "Работает"
@@ -219,16 +222,44 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 			}
 		}
 	}
+	if !sshFound {
+		check("SSH на хосте", "Нет данных API", "unknown", "Проверьте состояние службы TSM-SSH в Host Client.")
+	}
+	if !lwaFound {
+		check("Служба lwmd", "Нет данных или не найдена", "unknown", "Проверьте через esxcli daemon info get -s lwmd; отсутствие в API не доказывает отсутствие VIB.")
+	}
 	collectFirewall(mh, h)
 	if h.Firewall.Known && h.Firewall.Present {
-		value := "Выключено"
+		value, status := "Выключено", "info"
 		if h.Firewall.Enabled {
 			value = "Включено"
 		}
-		check("Правило firewall lwmd", value, "info", "Проверьте все порты и список разрешённых адресов, прежде чем изменять правило.")
+		access := "Список адресов не получен"
+		if h.Firewall.AllIPs != nil {
+			if *h.Firewall.AllIPs {
+				access, status = "Разрешены все IP", "warn"
+			} else if len(h.Firewall.AllowedIPs) == 0 {
+				access = "Список разрешённых IP пуст"
+			} else {
+				access = "Разрешены: " + strings.Join(h.Firewall.AllowedIPs, ", ")
+			}
+		}
+		ports := "порты не получены"
+		if len(h.Firewall.Ports) > 0 {
+			ports = strings.Join(h.Firewall.Ports, ", ")
+		}
+		editability := ""
+		if h.Firewall.UserControllable != nil && !*h.Firewall.UserControllable {
+			editability += " Включение правила недоступно пользователю."
+		}
+		if h.Firewall.IPListUserConfigurable != nil && !*h.Firewall.IPListUserConfigurable {
+			editability += " Список IP недоступен для изменения."
+		}
+		check("Правило firewall lwmd", value, status, access+"; "+ports+". Проверьте все порты и ограничения перед изменениями."+editability)
 	} else {
 		check("Правило firewall lwmd", "Нет данных или не найдено", "unknown", "После установки проверьте esxcli network firewall ruleset list.")
 	}
+
 	// TCP reachability is not an application or authentication check.
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(hostname, "35557"))
@@ -293,6 +324,8 @@ func collectFirewall(mh mo.HostSystem, h *Host) {
 			continue
 		}
 		h.Firewall.Present, h.Firewall.Enabled = true, r.Enabled
+		h.Firewall.UserControllable = r.UserControllable
+		h.Firewall.IPListUserConfigurable = r.IpListUserConfigurable
 		if r.AllowedHosts != nil {
 			all := r.AllowedHosts.AllIp
 			h.Firewall.AllIPs = &all
@@ -302,7 +335,11 @@ func collectFirewall(mh mo.HostSystem, h *Host) {
 			}
 		}
 		for _, p := range r.Rule {
-			h.Firewall.Ports = append(h.Firewall.Ports, fmt.Sprintf("%s %s %d-%d", p.Direction, p.Protocol, p.Port, p.EndPort))
+			port := fmt.Sprint(p.Port)
+			if p.EndPort > 0 && p.EndPort != p.Port {
+				port += fmt.Sprintf("-%d", p.EndPort)
+			}
+			h.Firewall.Ports = append(h.Firewall.Ports, strings.TrimSpace(fmt.Sprintf("%s %s %s %s", p.Direction, p.Protocol, p.PortType, port)))
 		}
 	}
 }

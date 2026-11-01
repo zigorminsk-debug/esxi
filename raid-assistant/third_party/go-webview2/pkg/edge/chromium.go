@@ -16,7 +16,7 @@ import (
 )
 
 // CI-only non-sensitive lifecycle trace; disabled in ordinary application use.
-func raidTrace(stage string) {
+func RaidTrace(stage string) {
 	if os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") != "1" {
 		return
 	}
@@ -89,6 +89,7 @@ func NewChromium() *Chromium {
 }
 
 func (e *Chromium) Embed(hwnd uintptr) bool {
+	RaidTrace("Embed started")
 	e.hwnd = hwnd
 
 	dataPath := e.DataPath
@@ -103,7 +104,9 @@ func (e *Chromium) Embed(hwnd uintptr) bool {
 		dataPath = filepath.Join(os.Getenv("AppData"), currentExeName)
 	}
 
+	RaidTrace("calling WebView2Loader")
 	res, err := createCoreWebView2EnvironmentWithOptions(nil, windows.StringToUTF16Ptr(dataPath), 0, e.envCompleted)
+	RaidTrace(fmt.Sprintf("WebView2Loader returned result=%x err=%v", res, err))
 	if err != nil {
 		log.Printf("Error calling Webview2Loader: %v", err)
 		return false
@@ -188,7 +191,7 @@ func (e *Chromium) Release() uintptr {
 }
 
 func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environment) uintptr {
-	raidTrace(fmt.Sprintf("environment callback result %x", res))
+	RaidTrace(fmt.Sprintf("environment callback result %x", res))
 	if int64(res) < 0 {
 		log.Fatalf("Creating environment failed with %08x", res)
 	}
@@ -204,7 +207,7 @@ func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environme
 }
 
 func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller *ICoreWebView2Controller) uintptr {
-	raidTrace(fmt.Sprintf("controller callback result %x", res))
+	RaidTrace(fmt.Sprintf("controller callback result %x", res))
 	if int64(res) < 0 {
 		log.Fatalf("Creating controller failed with %08x", res)
 	}
@@ -268,7 +271,7 @@ func (e *Chromium) MessageReceived(_ *ICoreWebView2, args *iCoreWebView2WebMessa
 	var source *uint16
 	hr, _, _ := args.vtbl.GetSource.Call(uintptr(unsafe.Pointer(args)), uintptr(unsafe.Pointer(&source)))
 	allowed := hr == 0 && source != nil && w32.Utf16PtrToString(source) == "about:blank"
-	raidTrace(fmt.Sprintf("message received: source=%v allowed=%v", func() string {
+	RaidTrace(fmt.Sprintf("message received: source=%v allowed=%v", func() string {
 		if source == nil {
 			return "nil"
 		}

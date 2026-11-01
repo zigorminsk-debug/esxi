@@ -92,3 +92,17 @@ func TestAccessIP(t *testing.T) {
 		}
 	}
 }
+
+func TestFirewallCommandsSuppressedWhenAPIDisallowsChanges(t *testing.T) {
+	h := fixtureHost()
+	f := false
+	h.Firewall = inspect.Firewall{Known: true, Present: true, UserControllable: &f, IPListUserConfigurable: &f}
+	r := Build(h, fixtureBundle(), "Data O'Brien", "192.0.2.1")
+	c := commandText(r)
+	if strings.Contains(c, "--allowed-all false") || strings.Contains(c, "allowedip add") || strings.Contains(c, "-e true") {
+		t.Fatalf("generated forbidden firewall modifications: %s", c)
+	}
+	if !strings.Contains(r.Markdown, "нельзя изменять") || !strings.Contains(r.Markdown, "не управляется пользователем") {
+		t.Fatal("missing explanation of firewall restriction")
+	}
+}

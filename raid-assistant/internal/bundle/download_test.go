@@ -41,6 +41,9 @@ func TestOfficialDownloadConsentAndSuccess(t *testing.T) {
 	if calls != 1 || r.HashStatus != "pinned" || r.VibSHA256 != sumBytes(vib) || r.ArchiveName != OfficialFileName {
 		t.Fatalf("bad download result %+v calls=%d", r, calls)
 	}
+	if again, err := downloadOfficial(context.Background(), true, dir, c, OfficialFileURL, sumBytes(archive)); err != nil || calls != 1 || again.VibSHA256 != r.VibSHA256 {
+		t.Fatalf("verified local archive was not reused: %+v %v calls=%d", again, err, calls)
+	}
 	if data, err := os.ReadFile(r.ArchivePath); err != nil || !bytes.Equal(data, archive) {
 		t.Fatalf("archive not saved: %v", err)
 	}

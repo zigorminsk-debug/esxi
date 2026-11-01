@@ -1,6 +1,9 @@
 package inspect
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestConservativeCatalog(t *testing.T) {
 	known := []struct{ dev, sub, model string }{{"10e2", "4010", "MegaRAID 9560-8i"}, {"10e2", "4020", "MegaRAID 9580-8i8e"}, {"10e6", "40d8", "MegaRAID 9524-8i"}, {"10e6", "40da", "MegaRAID 9520-2M2"}}
@@ -43,5 +46,19 @@ func TestConservativeCatalog(t *testing.T) {
 		if c.Match == "catalog" {
 			t.Fatalf("incorrect match %+v", c)
 		}
+	}
+}
+
+func TestCandidateReasonsAreSpecific(t *testing.T) {
+	c := Controller{Vendor: "1000", DeviceID: "10e2", SubVendor: "1000", SubDevice: "4010", CatalogModel: "MegaRAID 9560-8i", Match: "catalog", Status: "unbound"}
+	if r := CandidateReason("8.0.0", []Controller{c}); !strings.Contains(r, "U1") {
+		t.Fatalf("version reason missing: %s", r)
+	}
+	if r := CandidateReason("8.0.3", []Controller{c}); !strings.Contains(r, "unbound") || !strings.Contains(r, "драйвер") {
+		t.Fatalf("driver reason missing: %s", r)
+	}
+	oem := Controller{Match: "oem", SubVendor: "1028", SubDevice: "1234"}
+	if r := CandidateReason("8.0.3", []Controller{oem}); !strings.Contains(r, "OEM") || !strings.Contains(r, "1028") {
+		t.Fatalf("OEM reason missing: %s", r)
 	}
 }

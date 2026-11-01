@@ -46,12 +46,14 @@ type Datastore struct {
 }
 
 type Firewall struct {
-	Known      bool     `json:"known"`
-	Present    bool     `json:"present"`
-	Enabled    bool     `json:"enabled"`
-	AllIPs     *bool    `json:"allIps,omitempty"`
-	AllowedIPs []string `json:"allowedIps,omitempty"`
-	Ports      []string `json:"ports,omitempty"`
+	Known                  bool     `json:"known"`
+	Present                bool     `json:"present"`
+	Enabled                bool     `json:"enabled"`
+	AllIPs                 *bool    `json:"allIps,omitempty"`
+	UserControllable       *bool    `json:"userControllable,omitempty"`
+	IPListUserConfigurable *bool    `json:"ipListUserConfigurable,omitempty"`
+	AllowedIPs             []string `json:"allowedIps,omitempty"`
+	Ports                  []string `json:"ports,omitempty"`
 }
 
 type Check struct {

@@ -2,6 +2,13 @@ package inspect
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -94,5 +101,41 @@ func TestValidateCredentials(t *testing.T) {
 		if err := ValidateCredentials(req); err == nil {
 			t.Fatalf("invalid credentials accepted: %+v", req)
 		}
+	}
+}
+
+func TestPinnedExpiredCertificateIsRejected(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "expired-fixture"}, NotBefore: now.Add(-48 * time.Hour), NotAfter: now.Add(-24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("expired certificate reached HTTP handler") }))
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+	server.StartTLS()
+	defer server.Close()
+	cert, err := PeekCertificate(context.Background(), strings.TrimPrefix(server.URL, "https://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.ValidTime {
+		t.Fatal("expired certificate appeared valid")
+	}
+	cfg, err := TLSConfig(cert.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: cfg}}
+	r, err := client.Get(server.URL)
+	if r != nil {
+		r.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expired pinned certificate accepted")
 	}
 }

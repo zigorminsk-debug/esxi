@@ -34,6 +34,19 @@ func downloadOfficial(ctx context.Context, accepted bool, outputDir string, clie
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return nil, errors.New("Не удалось создать папку для загрузки")
 	}
+	final := filepath.Join(outputDir, OfficialFileName)
+	if existing, err := os.Lstat(final); err == nil {
+		if !existing.Mode().IsRegular() {
+			return nil, errors.New("Существующий архив не является обычным файлом; откройте новую сессию")
+		}
+		res, err := InspectFile(final, outputDir, "Broadcom HTTPS", expectedSHA)
+		if err != nil {
+			return nil, errors.New("Существующий архив не прошёл повторную проверку; откройте новую сессию")
+		}
+		return res, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, errors.New("Не удалось проверить существующий архив")
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
@@ -62,7 +75,6 @@ func downloadOfficial(ctx context.Context, accepted bool, outputDir string, clie
 	if err != nil {
 		return nil, err
 	}
-	final := filepath.Join(outputDir, OfficialFileName)
 	if _, err := os.Stat(final); err == nil {
 		return nil, errors.New("Архив уже существует в папке результатов; повторное скачивание не выполнено")
 	}

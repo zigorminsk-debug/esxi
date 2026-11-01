@@ -141,9 +141,44 @@ func Build(h *inspect.Host, b *bundle.Result, datastore, accessIP string) Report
 	ip, _ := NormalizeAccessIP(accessIP)
 	fwCommands := []string{"esxcli network firewall ruleset list | grep -i lwmd", "esxcli network firewall ruleset rule list -r lwmd", "esxcli network firewall ruleset allowedip list -r lwmd"}
 	fwBody := "Изучите ВСЕ порты ruleset lwmd: он может включать не только 35557. Ограничьте доступ доверенными адресами администраторов и не публикуйте порт в Интернет. Не отключайте весь firewall."
+	if h.Firewall.Known && h.Firewall.Present {
+		state := "отключён"
+		if h.Firewall.Enabled {
+			state = "включён"
+		}
+		fwBody += " По данным API при проверке ruleset был " + state + "."
+		if len(h.Firewall.Ports) > 0 {
+			fwBody += " Обнаруженные правила: " + plain(strings.Join(h.Firewall.Ports, ", ")) + "."
+		}
+		if h.Firewall.AllIPs != nil {
+			if *h.Firewall.AllIPs {
+				fwBody += " По API ранее были разрешены все адреса."
+			} else if len(h.Firewall.AllowedIPs) == 0 {
+				fwBody += " Список адресов по API был пуст."
+			} else {
+				fwBody += " Разрешённые по API адреса: " + plain(strings.Join(h.Firewall.AllowedIPs, ", ")) + "."
+			}
+		}
+	} else {
+		fwBody += " Состояние lwmd по API неизвестно или правило отсутствует."
+	}
 	if ip != "" {
 		fwBody += " Ниже указан только введённый вами доверенный адрес/сеть; сначала убедитесь, что правила и обратный маршрут корректны. При существующих разрешённых адресах сохраните их и не заменяйте без проверки. Отключение allowed-all до добавления адреса может временно прервать доступ к lwmd; проверьте, что список можно изменять."
-		fwCommands = append(fwCommands, "esxcli network firewall ruleset set -r lwmd --allowed-all false", "esxcli network firewall ruleset allowedip add -r lwmd -i "+quote(ip), "esxcli network firewall ruleset set -r lwmd -e true", "esxcli network firewall ruleset allowedip list -r lwmd")
+		editableIP := h.Firewall.IPListUserConfigurable == nil || *h.Firewall.IPListUserConfigurable
+		editableEnabled := h.Firewall.UserControllable == nil || *h.Firewall.UserControllable
+		if editableIP {
+			fwBody += " После установки проверьте в ruleset list, что изменение Allowed IP configurable разрешено; при отсутствии разрешения команды не выполняйте."
+			fwCommands = append(fwCommands, "esxcli network firewall ruleset set -r lwmd --allowed-all false", "esxcli network firewall ruleset allowedip add -r lwmd -i "+quote(ip))
+		} else {
+			fwBody += " API сообщает, что список IP нельзя изменять; команды изменения списка не показаны. Используйте поддерживаемую настройку владельца службы или внешний firewall."
+		}
+		if editableIP && editableEnabled {
+			fwBody += " Перед включением убедитесь, что Enable/Disable configurable разрешено."
+			fwCommands = append(fwCommands, "esxcli network firewall ruleset set -r lwmd -e true")
+		} else if !editableEnabled {
+			fwBody += " API сообщает, что включение ruleset не управляется пользователем; команда включения не показана."
+		}
+		fwCommands = append(fwCommands, "esxcli network firewall ruleset allowedip list -r lwmd")
 	} else {
 		fwBody += " Укажите в приложении проверенный доверенный IP/CIDR, чтобы получить команды ограничения. Пока команда включения firewall не показана."
 	}
