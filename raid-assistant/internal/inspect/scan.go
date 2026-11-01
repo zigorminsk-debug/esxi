@@ -77,7 +77,7 @@ func scanWithClient(ctx context.Context, req Request, hostname, address string, 
 		_ = v.Destroy(cleanup)
 	}()
 	var hosts []mo.HostSystem
-	props := []string{"name", "summary", "hardware.systemInfo", "hardware.pciDevice", "config.product", "config.storageDevice", "config.service", "config.firewall", "runtime.inMaintenanceMode", "datastore"}
+	props := []string{"name", "summary", "hardware.systemInfo", "hardware.pciDevice", "capability", "config.product", "config.storageDevice", "config.service", "config.firewall", "runtime.inMaintenanceMode", "datastore"}
 	if err := v.Retrieve(ctx, []string{"HostSystem"}, props, &hosts); err != nil || len(hosts) != 1 {
 		return nil, errors.New("Не удалось прочитать параметры одного хоста ESXi. Проверьте права на просмотр оборудования и конфигурации")
 	}
@@ -92,6 +92,9 @@ func scanWithClient(ctx context.Context, req Request, hostname, address string, 
 	}
 	if mh.Hardware != nil {
 		h.Vendor, h.Model = mh.Hardware.SystemInfo.Vendor, mh.Hardware.SystemInfo.Model
+	}
+	if mh.Capability != nil {
+		h.SecureBoot = mh.Capability.UefiSecureBoot
 	}
 	h.Controllers = collectControllers(mh)
 	for i := range h.Controllers {
@@ -183,7 +186,14 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 	} else {
 		check("Каталог контроллеров", "Подходящий пакет не подтверждён", "unknown", h.CandidateReason)
 	}
-	check("Secure Boot и подпись", "Не проверено", "unknown", "Проверьте Secure Boot, политику acceptance и подпись VIB на хосте перед установкой.")
+	if h.SecureBoot == nil {
+		check("UEFI Secure Boot", "Нет данных API", "unknown", "На ESXi 8.0 U3 API может сообщать состояние, заявленное firmware. Проверьте через консоль или доверенное управление сервером.")
+	} else if *h.SecureBoot {
+		check("UEFI Secure Boot", "Firmware сообщает: включён", "info", "Это не TPM-аттестация и не проверка подписи пакета. Проверьте политику acceptance и подпись VIB отдельно.")
+	} else {
+		check("UEFI Secure Boot", "Firmware сообщает: выключен", "warn", "Сверьте состояние независимо. Не отключайте проверки и не снижайте acceptance ради установки.")
+	}
+	check("Подпись VIB", "Не проверена", "unknown", "Проверьте источник и подпись VIB на хосте; локальный SHA-256 не является подписью производителя.")
 	check("Firmware и здоровье RAID", "Не проверено", "unknown", "ESXi API не подтверждает состояние физических дисков, версии прошивки или совместимость OEM. Проверьте в утилите контроллера.")
 	check("Bootbank и место под VIB", "Не проверено", "unknown", "Свободное место в datastore не означает наличие места в bootbank.")
 	if mh.Runtime.InMaintenanceMode {

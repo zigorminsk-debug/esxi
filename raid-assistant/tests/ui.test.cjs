@@ -45,6 +45,10 @@ test('demonstration workflow: consent, package, report and no credential network
   assert.equal(pageErrors.length,0, pageErrors.join('\n'));
   assert.equal(requests.some(r=>(r.url+(r.post||'')).includes('test-password-not-real')),false);
   assert.equal(requests.filter(r=>r.post).length,0);
+  await p.fill('#address','192.0.2.11');
+  assert.equal(await p.locator('#diagnosticResult').isVisible(),false);
+  assert.equal(await p.locator('#reportResult').isVisible(),false);
+  assert.equal(await p.locator('#certPanel').isVisible(),false);
  } finally {await p.close()}
 });
 

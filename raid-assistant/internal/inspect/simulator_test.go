@@ -26,6 +26,11 @@ func TestReadOnlySimulator(t *testing.T) {
 	if hs.Hardware == nil || hs.Config == nil || hs.Config.StorageDevice == nil {
 		t.Fatal("simulator lacks host configuration")
 	}
+	secureBoot := true
+	if hs.Capability == nil {
+		hs.Capability = &types.HostCapability{}
+	}
+	hs.Capability.UefiSecureBoot = &secureBoot
 	hs.Config.Product.Version = "8.0.3"
 	hs.Config.Product.Build = "24022510"
 	hs.Hardware.PciDevice = append(hs.Hardware.PciDevice, types.HostPciDevice{Id: "0000:18:00.0", ClassId: 0x0104, VendorId: 0x1000, DeviceId: 0x10e2, SubVendorId: 0x1000, SubDeviceId: 0x4010, DeviceName: "MegaRAID 9560-8i"})
@@ -59,6 +64,9 @@ func TestReadOnlySimulator(t *testing.T) {
 	}
 	if got.Name == "" || got.Version != "8.0.3" || got.Candidate == nil || got.Candidate.Model != "MegaRAID 9560-8i" {
 		t.Fatalf("unexpected simulated host: %+v", got)
+	}
+	if got.SecureBoot == nil || !*got.SecureBoot {
+		t.Fatal("firmware-reported Secure Boot status missing")
 	}
 	if len(got.Datastores) == 0 {
 		t.Fatal("simulator datastore was not collected")

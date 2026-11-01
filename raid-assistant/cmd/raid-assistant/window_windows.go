@@ -37,8 +37,11 @@ func runWindow(a *app.App) error {
 		cache = os.TempDir()
 	}
 	dataPath := filepath.Join(cache, "ESXi-RAID-Assistant", "WebView2")
+	selfTestTrace("starting WebView2")
 	w := webview2.NewWithOptions(webview2.WebViewOptions{Debug: false, DataPath: dataPath, AutoFocus: true, WindowOptions: webview2.WindowOptions{Title: "ESXi RAID Assistant", Width: 1360, Height: 900, Center: true}})
+	selfTestTrace("WebView2 returned")
 	if w == nil {
+		selfTestTrace("WebView2 unavailable")
 		alert("Не удалось открыть окно. Установите Microsoft Edge WebView2 Runtime и повторите запуск.")
 		return errors.New("WebView2 недоступен")
 	}
@@ -83,12 +86,13 @@ func runWindow(a *app.App) error {
 		}
 	}
 	// CI can exercise the real WebView2 + native RPC bridge without ESXi.
-	// No file is written and no network connection is attempted in this mode.
+	// Only an optional lifecycle trace is written; no network is attempted.
 	smoke := os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") == "1"
 	smokeOK := false
 	if smoke {
 		if err := w.Bind("goSmokeReady", func(valid bool) {
 			smokeOK = valid
+			selfTestTrace("smoke callback reached")
 			w.Terminate()
 		}); err != nil {
 			return err
@@ -99,8 +103,11 @@ func runWindow(a *app.App) error {
 		  await window.goSmokeReady(invalidRejected && !!document.querySelector('#connectionForm') && !window.RAID_DEMO);
 		});`)
 	}
+	selfTestTrace("bindings registered")
 	w.SetHtml(frontend.HTML(false))
+	selfTestTrace("HTML navigation requested")
 	w.Run()
+	selfTestTrace("window loop ended")
 	if smoke && !smokeOK {
 		return errors.New("WebView2 self-test failed")
 	}

@@ -4,6 +4,7 @@
 package edge
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +14,22 @@ import (
 	"github.com/jchv/go-webview2/internal/w32"
 	"golang.org/x/sys/windows"
 )
+
+// CI-only non-sensitive lifecycle trace; disabled in ordinary application use.
+func raidTrace(stage string) {
+	if os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") != "1" {
+		return
+	}
+	file := os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST_TRACE")
+	if file == "" {
+		return
+	}
+	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	if err == nil {
+		_, _ = fmt.Fprintln(f, stage)
+		_ = f.Close()
+	}
+}
 
 type Chromium struct {
 	hwnd                   uintptr
@@ -171,6 +188,7 @@ func (e *Chromium) Release() uintptr {
 }
 
 func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environment) uintptr {
+	raidTrace(fmt.Sprintf("environment callback result %x", res))
 	if int64(res) < 0 {
 		log.Fatalf("Creating environment failed with %08x", res)
 	}
@@ -186,6 +204,7 @@ func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environme
 }
 
 func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller *ICoreWebView2Controller) uintptr {
+	raidTrace(fmt.Sprintf("controller callback result %x", res))
 	if int64(res) < 0 {
 		log.Fatalf("Creating controller failed with %08x", res)
 	}
@@ -249,6 +268,12 @@ func (e *Chromium) MessageReceived(_ *ICoreWebView2, args *iCoreWebView2WebMessa
 	var source *uint16
 	hr, _, _ := args.vtbl.GetSource.Call(uintptr(unsafe.Pointer(args)), uintptr(unsafe.Pointer(&source)))
 	allowed := hr == 0 && source != nil && w32.Utf16PtrToString(source) == "about:blank"
+	raidTrace(fmt.Sprintf("message received: source=%v allowed=%v", func() string {
+		if source == nil {
+			return "nil"
+		}
+		return w32.Utf16PtrToString(source)
+	}(), allowed))
 	if source != nil {
 		windows.CoTaskMemFree(unsafe.Pointer(source))
 	}

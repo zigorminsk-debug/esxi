@@ -100,7 +100,15 @@ func Build(h *inspect.Host, b *bundle.Result, datastore, accessIP string) Report
 	if len(cards) == 0 {
 		cards = []string{"API не вернул контроллеры; уточните модель и PCI ID вручную."}
 	}
-	add("Проверьте исходные данные", fmt.Sprintf("Хост %s (%s), ESXi %s, build %s. Сервер: %s %s. Адаптеры: %s. Версии firmware, состояние физических дисков, Secure Boot, совместимость OEM и подпись пакета программой не подтверждены.", plain(h.DisplayHost), plain(h.Name), plain(h.Version), plain(h.Build), plain(h.Vendor), plain(h.Model), strings.Join(cards, "; ")), false,
+	secureBoot := "Secure Boot: API не сообщил состояние."
+	if h.SecureBoot != nil {
+		if *h.SecureBoot {
+			secureBoot = "Secure Boot: firmware сообщает, что включён; это не TPM-аттестация."
+		} else {
+			secureBoot = "Secure Boot: firmware сообщает, что выключен; сверьте независимо."
+		}
+	}
+	add("Проверьте исходные данные", fmt.Sprintf("Хост %s (%s), ESXi %s, build %s. Сервер: %s %s. Адаптеры: %s. %s Версии firmware, состояние физических дисков, совместимость OEM и подпись пакета программой не подтверждены.", plain(h.DisplayHost), plain(h.Name), plain(h.Version), plain(h.Build), plain(h.Vendor), plain(h.Model), strings.Join(cards, "; "), secureBoot), false,
 		"vmware -vl", "esxcli storage core adapter list", "esxcli hardware pci list", "esxcli software acceptance get", "esxcli software vib list | grep -i lwmd")
 	add("Подготовьте сервер и резервные копии", "Проверьте резервные копии ВМ и конфигурации, сохраните конфигурацию RAID штатным средством производителя и убедитесь, что массив не degraded/rebuilding. Сверьте firmware, модель и PCI subsystem ID с README Broadcom или OEM. Запланируйте окно обслуживания и план отката. Программа не меняет сервер и не проверяла работоспособность резервных копий.", true)
 	if h.Candidate == nil {

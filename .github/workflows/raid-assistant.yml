@@ -40,8 +40,9 @@ jobs:
         env:
           RAID_PREVIEW_EXECUTABLE: ${{ runner.temp }}/raid-preview
   windows-build:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 20
+    permissions: { contents: read, statuses: write }
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
@@ -70,12 +71,26 @@ jobs:
           if ($actual -ne $expected) { throw 'Signing certificate pin mismatch' }
       - name: Run WebView2 and native-bridge smoke test on Windows
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $env:ESXI_RAID_ASSISTANT_SELFTEST='1'
+          $env:ESXI_RAID_ASSISTANT_SELFTEST_TRACE=Join-Path $env:RUNNER_TEMP 'raid-selftest.log'
           $exe = (Resolve-Path raid-build/ESXi-RAID-Assistant-0.1.0-windows-x64.exe).Path
           $p = Start-Process -FilePath $exe -PassThru
-          if (!$p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; throw 'WebView2 bridge self-test timed out' }
-          if ($p.ExitCode -ne 0) { throw "WebView2 bridge self-test failed with exit code $($p.ExitCode)" }
+          $timedOut = !$p.WaitForExit(60000)
+          if ($timedOut) { Stop-Process -Id $p.Id -Force }
+          if ($timedOut -or $p.ExitCode -ne 0) {
+            $lines = @('WebView2 smoke failed', "Runner=$env:RUNNER_OS timedOut=$timedOut exit=$($p.ExitCode)")
+            if (Test-Path $env:ESXI_RAID_ASSISTANT_SELFTEST_TRACE) { $lines += Get-Content $env:ESXI_RAID_ASSISTANT_SELFTEST_TRACE }
+            $i=0
+            foreach ($line in $lines) {
+              $i++
+              if ($line.Length -gt 130) { $line=$line.Substring(0,130) }
+              gh api "repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -f state=error -f "context=raid-windows-trace-$i" -f "description=$line" | Out-Null
+            }
+            throw 'WebView2 bridge self-test failed or timed out; diagnostic statuses attached'
+          }
       - name: Generate checksums and release notes
         shell: pwsh
         run: |
@@ -90,23 +105,3 @@ jobs:
           path: raid-build/*
           if-no-files-found: error
           retention-days: 30
-  # Temporary integration check: do not publish or keep the vendor archive.
-  vendor-extractor-probe:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions: { contents: read, statuses: write }
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with: { go-version-file: raid-assistant/go.mod, cache-dependency-path: raid-assistant/go.sum }
-      - name: Test Go extractor on original Broadcom archive without redistributing it
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          exec > /tmp/raid-integration.log 2>&1
-          trap 'MSG=$(tail -c 110 /tmp/raid-integration.log | tr "\n" " "); gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=failure -f context=raid-vendor-extractor -f description="$MSG"' ERR
-          curl -fsSL --max-time 120 -o /tmp/raid-broadcom.zip 'https://docs.broadcom.com/docs-and-downloads/008.018.012.000_MR_7.38_LSA_ESXi.zip'
-          cd raid-assistant
-          RAID_OFFICIAL_ARCHIVE=/tmp/raid-broadcom.zip go test ./internal/bundle -run TestOfficialArchiveIfProvided -v
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context=raid-vendor-extractor -f description='Original archive and extracted VIB hashes verified by Go'

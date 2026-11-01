@@ -38,7 +38,19 @@
   fontScale(0);
   $('fontPlus').addEventListener('click', () => fontScale(.1)); $('fontMinus').addEventListener('click', () => fontScale(-.1));
   $('copyCert').addEventListener('click', () => { if (state.cert) copy(state.cert.sha256); });
-  $('address').addEventListener('input', () => { if (state.certAddress !== $('address').value.trim()) { state.cert = null; hide('certPanel', true); } });
+  function resetResults() {
+    state.host = null; state.bundle = null; state.report = null;
+    hide('diagnosticEmpty', false); hide('diagnosticResult', true);
+    hide('packageEmpty', false); hide('packageResult', true);
+    hide('reportEmpty', false); hide('reportResult', true);
+  }
+  $('address').addEventListener('input', () => {
+    if (state.certAddress !== $('address').value.trim()) {
+      state.cert = null; hide('certPanel', true);
+      // Do not leave a previous host's package or commands next to a new IP.
+      if (state.host) resetResults();
+    }
+  });
   $('connectionForm').addEventListener('submit', async event => {
     event.preventDefault();
     const address = $('address').value.trim();
@@ -68,10 +80,7 @@
     }
     const request = { address: state.certAddress, user: $('username').value.trim(), password: $('password').value, pin };
     try {
-      state.host = null; state.bundle = null; state.report = null;
-      hide('diagnosticEmpty', false); hide('diagnosticResult', true);
-      hide('packageEmpty', false); hide('packageResult', true);
-      hide('reportEmpty', false); hide('reportResult', true);
+      resetResults();
       const promise = job(() => window.goScanStart(request), 'Проверяем ESXi и контроллеры…');
       $('password').value = '';
       const host = await promise;

@@ -71,6 +71,7 @@ type Host struct {
 	FullName        string       `json:"fullName"`
 	Vendor          string       `json:"vendor"`
 	Model           string       `json:"model"`
+	SecureBoot      *bool        `json:"secureBoot,omitempty"`
 	Controllers     []Controller `json:"controllers"`
 	Datastores      []Datastore  `json:"datastores"`
 	Checks          []Check      `json:"checks"`
