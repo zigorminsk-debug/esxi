@@ -37,5 +37,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          BLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" -f content="$(base64 -w0 /tmp/vendor-page)" -f encoding=base64 --jq .sha)
+          npm install --no-save --no-package-lock playwright-core
+          cat > /tmp/probe-page.cjs <<'JS'
+          const { chromium } = require(process.cwd() + '/node_modules/playwright-core');
+          (async () => {
+            const browser = await chromium.launch({ channel: 'chrome', args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            const responses = [];
+            page.on('response', async r => {
+              const url = r.url();
+              if (url.includes('/api/')) {
+                let body = '';
+                try { if ((r.headers()['content-type'] || '').includes('json')) body = (await r.text()).slice(0, 50000); } catch {}
+                responses.push({ url, status: r.status(), body });
+              }
+            });
+            await page.goto('https://docs.broadcom.com/docs/1232745889', { waitUntil: 'networkidle', timeout: 60000 });
+            const links = await page.locator('a').evaluateAll(as => as.map(a => ({ text: a.textContent.trim(), href: a.href })).filter(a => a.text || a.href));
+            console.log(JSON.stringify({ links, responses }));
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          JS
+          node /tmp/probe-page.cjs > /tmp/vendor-results.json
+          BLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" -f content="$(base64 -w0 /tmp/vendor-results.json)" -f encoding=base64 --jq .sha)
           gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context=vendor-page-review -f description="$BLOB"
