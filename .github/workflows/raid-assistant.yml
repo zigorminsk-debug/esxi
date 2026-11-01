@@ -37,6 +37,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          exec > /tmp/raid-probe-step.log 2>&1
+          trap 'python3 -c "import json,base64; print(json.dumps({\"content\":base64.b64encode(open(\"/tmp/raid-probe-step.log\",\"rb\").read()[-12000:]).decode(),\"encoding\":\"base64\"}))" > /tmp/raid-probe-error.json; ERRBLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" --input /tmp/raid-probe-error.json --jq .sha); gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=error -f context=vendor-page-error -f description="$ERRBLOB"' ERR
           npm install --no-save --no-package-lock playwright-core
           cat > /tmp/probe-page.cjs <<'JS'
           const { chromium } = require(process.cwd() + '/node_modules/playwright-core');
@@ -44,13 +46,9 @@ jobs:
             const browser = await chromium.launch({ channel: 'chrome', args: ['--no-sandbox'] });
             const page = await browser.newPage();
             const responses = [];
-            page.on('response', async r => {
+            page.on('response', r => {
               const url = r.url();
-              if (url.includes('/api/')) {
-                let body = '';
-                try { if ((r.headers()['content-type'] || '').includes('json')) body = (await r.text()).slice(0, 50000); } catch {}
-                responses.push({ url, status: r.status(), body });
-              }
+              if (url.includes('/api/')) responses.push({ url, status: r.status() });
             });
             await page.goto('https://docs.broadcom.com/docs/1232745889', { waitUntil: 'networkidle', timeout: 60000 });
             const links = await page.locator('a').evaluateAll(as => as.map(a => ({ text: a.textContent.trim(), href: a.href })).filter(a => a.text || a.href));
