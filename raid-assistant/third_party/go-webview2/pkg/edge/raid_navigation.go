@@ -4,10 +4,10 @@ package edge
 
 import (
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/jchv/go-webview2/internal/raidguard"
 	"github.com/jchv/go-webview2/internal/w32"
 	"golang.org/x/sys/windows"
 )
@@ -45,23 +45,18 @@ func raidInvoke(h *raidNavigationHandler, _ *ICoreWebView2, a *raidNavigationArg
 		uri = w32.Utf16PtrToString(source)
 		windows.CoTaskMemFree(unsafe.Pointer(source))
 	}
-	lower := strings.ToLower(uri)
-	allowed := hr == 0 && lower == "about:blank"
-	// NavigateToString is invoked only by the native application with its
-	// embedded HTML. Its navigation-start URI is not necessarily the final
-	// origin; permit one locally initiated non-network navigation, never a
-	// HTTP/file/other external destination. The RPC bridge still checks the
-	// final WebMessageReceived source independently.
-	var initiated int32
-	hri, _, _ := a.vtbl.GetIsUserInitiated.Call(uintptr(unsafe.Pointer(a)), uintptr(unsafe.Pointer(&initiated)))
-	localURI := lower == "" || strings.HasPrefix(lower, "about:") || strings.HasPrefix(lower, "data:text/html")
-	if !allowed && hr == 0 && hri == 0 && initiated != 0 && localURI && atomic.CompareAndSwapUint32(&h.impl.pendingLocalNavigation, 1, 0) {
+	allowed := hr == 0 && uri == "about:blank"
+	// WebView2 currently starts NavigateToString as a base64 data URI and
+	// reports IsUserInitiated=false. Allow it only once, when its decoded
+	// bytes exactly match the native application's embedded document.
+	if !allowed && hr == 0 && atomic.LoadUint32(&h.impl.pendingLocalNavigation) == 1 && raidguard.IsEmbeddedDocument(uri, h.impl.localDocumentDigest) && atomic.CompareAndSwapUint32(&h.impl.pendingLocalNavigation, 1, 0) {
+		h.impl.localDocumentURI = uri
 		allowed = true
 	}
-	if allowed && lower == "about:blank" {
-		atomic.StoreUint32(&h.impl.pendingLocalNavigation, 0)
+	if allowed && uri == "about:blank" && atomic.CompareAndSwapUint32(&h.impl.pendingLocalNavigation, 1, 0) {
+		h.impl.localDocumentURI = uri
 	}
-	RaidTrace(fmt.Sprintf("navigation allowed=%v initiated=%v URI=%.60q", allowed, initiated != 0, uri))
+	RaidTrace(fmt.Sprintf("navigation allowed=%v URI=%.60q", allowed, uri))
 	if !allowed {
 		_, _, _ = a.vtbl.PutCancel.Call(uintptr(unsafe.Pointer(a)), 1)
 	}

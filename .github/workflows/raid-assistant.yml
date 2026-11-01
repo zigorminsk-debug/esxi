@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with: { go-version-file: raid-assistant/go.mod, cache-dependency-path: raid-assistant/go.sum }
       - run: go test -race ./...
+      - run: go test github.com/jchv/go-webview2/internal/raidguard
       - run: go vet ./...
   browser-tests:
     runs-on: ubuntu-24.04

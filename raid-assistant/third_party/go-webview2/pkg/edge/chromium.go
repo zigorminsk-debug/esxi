@@ -4,6 +4,7 @@
 package edge
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
@@ -51,6 +52,8 @@ type Chromium struct {
 	// The only app-initiated NavigateToString is the embedded document. Its
 	// NavigationStarting URI may differ from its eventual about:blank origin.
 	pendingLocalNavigation uint32
+	localDocumentDigest    [sha256.Size]byte
+	localDocumentURI       string
 
 	// Settings
 	DataPath string
@@ -146,6 +149,8 @@ func (e *Chromium) Navigate(url string) {
 }
 
 func (e *Chromium) NavigateToString(htmlContent string) {
+	e.localDocumentDigest = sha256.Sum256([]byte(htmlContent))
+	e.localDocumentURI = ""
 	atomic.StoreUint32(&e.pendingLocalNavigation, 1)
 	hr, _, _ := e.webview.vtbl.NavigateToString.Call(
 		uintptr(unsafe.Pointer(e.webview)),
@@ -229,7 +234,7 @@ func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller
 	_, _, _ = e.webview.vtbl.AddRef.Call(
 		uintptr(unsafe.Pointer(e.webview)),
 	)
-	// Only the in-memory about:blank document may navigate in this application.
+	// Only the exact embedded document (plus a blank page) may navigate.
 	_, _, _ = e.webview.vtbl.AddNavigationStarting.Call(
 		uintptr(unsafe.Pointer(e.webview)),
 		uintptr(unsafe.Pointer(e.raidNavigationStarting)),
@@ -277,16 +282,15 @@ func (e *Chromium) MessageReceived(_ *ICoreWebView2, args *iCoreWebView2WebMessa
 	// if navigation is somehow triggered by the WebView runtime itself.
 	var source *uint16
 	hr, _, _ := args.vtbl.GetSource.Call(uintptr(unsafe.Pointer(args)), uintptr(unsafe.Pointer(&source)))
-	allowed := hr == 0 && source != nil && w32.Utf16PtrToString(source) == "about:blank"
-	RaidTrace(fmt.Sprintf("message received: source=%v allowed=%v", func() string {
-		if source == nil {
-			return "nil"
-		}
-		return w32.Utf16PtrToString(source)
-	}(), allowed))
+	sourceURI := ""
 	if source != nil {
+		sourceURI = w32.Utf16PtrToString(source)
 		windows.CoTaskMemFree(unsafe.Pointer(source))
 	}
+	// WebView2 may report the documented about:blank origin or the exact
+	// data URI validated during the trusted NavigateToString navigation.
+	allowed := hr == 0 && (sourceURI == "about:blank" || (e.localDocumentURI != "" && sourceURI == e.localDocumentURI))
+	RaidTrace(fmt.Sprintf("message received allowed=%v source=%.60q", allowed, sourceURI))
 	if !allowed {
 		return 0
 	}
