@@ -42,7 +42,9 @@ func runWindow(a *app.App) error {
 	selfTestTrace("WebView2 returned")
 	if w == nil {
 		selfTestTrace("WebView2 unavailable")
-		alert("Не удалось открыть окно. Установите Microsoft Edge WebView2 Runtime и повторите запуск.")
+		if os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") != "1" {
+			alert("Не удалось открыть окно или отключить автозаполнение. Установите либо обновите Microsoft Edge WebView2 Runtime и повторите запуск.")
+		}
 		return errors.New("WebView2 недоступен")
 	}
 	defer w.Destroy()

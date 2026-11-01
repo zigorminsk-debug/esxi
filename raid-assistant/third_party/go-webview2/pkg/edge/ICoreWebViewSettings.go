@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -44,6 +45,33 @@ type _ICoreWebViewSettingsVtbl struct {
 
 type ICoreWebViewSettings struct {
 	vtbl *_ICoreWebViewSettingsVtbl
+}
+
+// DisableAutofill uses the actual Settings4 COM interface, rather than
+// calling newer vtable slots on the Settings1 pointer. Never persist form data
+// or show password-save prompts in this credential-handling application.
+func (i *ICoreWebViewSettings) DisableAutofill() error {
+	guid := NewGUID("cb56846c-4168-4d53-b04f-03b6d6796ff2")
+	var settings4 *ICoreWebViewSettings
+	hr, _, _ := i.vtbl.QueryInterface.Call(uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(guid)), uintptr(unsafe.Pointer(&settings4)))
+	if int32(hr) != 0 || settings4 == nil {
+		return fmt.Errorf("WebView2 Settings4 unavailable (HRESULT %x)", hr)
+	}
+	defer settings4.vtbl.Release.Call(uintptr(unsafe.Pointer(settings4)))
+	if hr, _, _ = settings4.vtbl.PutIsPasswordAutosaveEnabled.Call(uintptr(unsafe.Pointer(settings4)), 0); int32(hr) != 0 {
+		return fmt.Errorf("disable password autosave failed (HRESULT %x)", hr)
+	}
+	if hr, _, _ = settings4.vtbl.PutIsGeneralAutofillEnabled.Call(uintptr(unsafe.Pointer(settings4)), 0); int32(hr) != 0 {
+		return fmt.Errorf("disable general autofill failed (HRESULT %x)", hr)
+	}
+	var enabled int32
+	if hr, _, _ = settings4.vtbl.GetIsPasswordAutosaveEnabled.Call(uintptr(unsafe.Pointer(settings4)), uintptr(unsafe.Pointer(&enabled))); int32(hr) != 0 || enabled != 0 {
+		return fmt.Errorf("password autosave is not disabled (HRESULT %x)", hr)
+	}
+	if hr, _, _ = settings4.vtbl.GetIsGeneralAutofillEnabled.Call(uintptr(unsafe.Pointer(settings4)), uintptr(unsafe.Pointer(&enabled))); int32(hr) != 0 || enabled != 0 {
+		return fmt.Errorf("general autofill is not disabled (HRESULT %x)", hr)
+	}
+	return nil
 }
 
 func (i *ICoreWebViewSettings) AddRef() uintptr {

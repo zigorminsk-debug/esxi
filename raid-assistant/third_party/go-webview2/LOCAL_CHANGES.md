@@ -5,4 +5,7 @@ Security hardening for this offline, credential-handling desktop app:
 - Cancel top-level/frame navigation to anything except about:blank.
 - Accept native-bridge messages only from about:blank and do not echo them.
 - Deny clipboard-read permission (the app implements explicit write-only copying).
+- Disable WebView2 password autosave and general autofill before loading the GUI; require Settings4.
+- Limit the initial window to the screen and correctly load its default system icon.
+- Bundle fixed RPC bootstrap scripts into the local document before navigation, avoiding the race in asynchronous WebView2 document-script registration. `Init` is deliberately specialized for this bundled document.
 The upstream WebView2 loader binaries and their license are kept in webviewloader/sdk.

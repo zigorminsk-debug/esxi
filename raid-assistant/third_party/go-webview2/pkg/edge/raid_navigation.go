@@ -3,6 +3,7 @@
 package edge
 
 import (
+	"fmt"
 	"unsafe"
 
 	"github.com/jchv/go-webview2/internal/w32"
@@ -38,7 +39,7 @@ func raidInvoke(_ *raidNavigationHandler, _ *ICoreWebView2, a *raidNavigationArg
 	var source *uint16
 	hr, _, _ := a.vtbl.GetURI.Call(uintptr(unsafe.Pointer(a)), uintptr(unsafe.Pointer(&source)))
 	allowed := hr == 0 && source != nil && w32.Utf16PtrToString(source) == "about:blank"
-	RaidTrace("navigation starting")
+	RaidTrace(fmt.Sprintf("navigation allowed=%v HRESULT=%x", allowed, hr))
 	if source != nil {
 		windows.CoTaskMemFree(unsafe.Pointer(source))
 	}

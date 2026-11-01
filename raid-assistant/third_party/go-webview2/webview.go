@@ -9,6 +9,7 @@ import (
 	"log"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -47,15 +48,16 @@ type browser interface {
 }
 
 type webview struct {
-	hwnd       uintptr
-	mainthread uintptr
-	browser    browser
-	autofocus  bool
-	maxsz      w32.Point
-	minsz      w32.Point
-	m          sync.Mutex
-	bindings   map[string]interface{}
-	dispatchq  []func()
+	hwnd        uintptr
+	mainthread  uintptr
+	browser     browser
+	autofocus   bool
+	maxsz       w32.Point
+	minsz       w32.Point
+	m           sync.Mutex
+	bindings    map[string]interface{}
+	initScripts []string
+	dispatchq   []func()
 }
 
 type WindowOptions struct {
@@ -98,6 +100,9 @@ func NewWithOptions(options WebViewOptions) WebView {
 	edge.RaidTrace("NewWithOptions entered")
 	w := &webview{}
 	w.bindings = map[string]interface{}{}
+	// This offline app uses a single bundled document. Inline bridge bootstrap
+	// with it instead of racing WebView2's asynchronous script registration.
+	w.initScripts = []string{`window.external={invoke:s=>window.chrome.webview.postMessage(s)}`}
 	w.autofocus = options.AutoFocus
 
 	chromium := edge.NewChromium()
@@ -113,20 +118,26 @@ func NewWithOptions(options WebViewOptions) WebView {
 	}
 
 	settings, err := chromium.GetSettings()
-	if err != nil {
-		log.Fatal(err)
+	if err != nil || settings == nil {
+		edge.RaidTrace("WebView2 settings unavailable")
+		w.Destroy()
+		return nil
 	}
-	// disable context menu
-	err = settings.PutAreDefaultContextMenusEnabled(options.Debug)
-	if err != nil {
-		log.Fatal(err)
+	// The app contains ESXi credentials: fail closed if the runtime cannot
+	// disable password autosaving and generic form autofill before loading HTML.
+	if err := settings.DisableAutofill(); err != nil {
+		edge.RaidTrace("WebView2 autofill controls unavailable")
+		w.Destroy()
+		return nil
 	}
-	// disable developer tools
-	err = settings.PutAreDevToolsEnabled(options.Debug)
-	if err != nil {
-		log.Fatal(err)
+	if err := settings.PutAreDefaultContextMenusEnabled(options.Debug); err != nil {
+		w.Destroy()
+		return nil
 	}
-
+	if err := settings.PutAreDevToolsEnabled(options.Debug); err != nil {
+		w.Destroy()
+		return nil
+	}
 	return w
 }
 
@@ -275,10 +286,9 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 
 	var icon uintptr
 	if opts.IconId == 0 {
-		// load default icon
-		icow, _, _ := w32.User32GetSystemMetrics.Call(w32.SystemMetricsCxIcon)
-		icoh, _, _ := w32.User32GetSystemMetrics.Call(w32.SystemMetricsCyIcon)
-		icon, _, _ = w32.User32LoadImageW.Call(uintptr(hinstance), 32512, icow, icoh, 0)
+		// Standard application icon. LoadImageW takes six arguments and
+		// system resources require a NULL module handle.
+		icon, _, _ = w32.User32LoadImageW.Call(0, 32512, 1, 0, 0, w32.LR_DEFAULTSIZE|w32.LR_SHARED)
 	} else {
 		// load icon from resource
 		icon, _, _ = w32.User32LoadImageW.Call(uintptr(hinstance), uintptr(opts.IconId), 1, 0, 0, w32.LR_DEFAULTSIZE|w32.LR_SHARED)
@@ -311,7 +321,13 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		// get screen size
 		screenWidth, _, _ := w32.User32GetSystemMetrics.Call(w32.SM_CXSCREEN)
 		screenHeight, _, _ := w32.User32GetSystemMetrics.Call(w32.SM_CYSCREEN)
-		// calculate window position
+		// Keep the title bar reachable on smaller desktops/CI screens.
+		if screenWidth > 0 && windowWidth > uint(screenWidth) {
+			windowWidth = uint(screenWidth)
+		}
+		if screenHeight > 0 && windowHeight > uint(screenHeight) {
+			windowHeight = uint(screenHeight)
+		}
 		posX = (uint(screenWidth) - windowWidth) / 2
 		posY = (uint(screenHeight) - windowHeight) / 2
 	} else {
@@ -397,6 +413,18 @@ func (w *webview) Navigate(url string) {
 }
 
 func (w *webview) SetHtml(html string) {
+	w.m.Lock()
+	scripts := append([]string(nil), w.initScripts...)
+	w.m.Unlock()
+	// Scripts contain only locally generated bindings and static application
+	// code, never host data or credentials. Place them before the app scripts
+	// inside the document so they are ready on the very first navigation.
+	bootstrap := "<script>\n" + strings.Join(scripts, ";\n") + "\n</script>\n"
+	if strings.Contains(html, "</head>") {
+		html = strings.Replace(html, "</head>", bootstrap+"</head>", 1)
+	} else {
+		html = bootstrap + html
+	}
 	w.browser.NavigateToString(html)
 }
 
@@ -439,7 +467,9 @@ func (w *webview) SetSize(width int, height int, hints Hint) {
 }
 
 func (w *webview) Init(js string) {
-	w.browser.Init(js)
+	w.m.Lock()
+	w.initScripts = append(w.initScripts, js)
+	w.m.Unlock()
 }
 
 func (w *webview) Eval(js string) {

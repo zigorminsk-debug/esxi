@@ -131,7 +131,6 @@ func (e *Chromium) Embed(hwnd uintptr) bool {
 		_, _, _ = w32.User32TranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		_, _, _ = w32.User32DispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 	}
-	e.Init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}")
 	return true
 }
 
