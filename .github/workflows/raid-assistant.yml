@@ -7,7 +7,8 @@ on:
     paths: ['raid-assistant/**', '.github/workflows/raid-assistant.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
+  statuses: write
 jobs:
   vendor-page-probe:
     runs-on: ubuntu-24.04
@@ -31,3 +32,10 @@ jobs:
                       print('DATA', data.strip()[:2000])
           Probe().feed(open('/tmp/vendor-page', encoding='utf8', errors='replace').read())
           PY
+      - name: Make public HTML available for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          BLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" -f content="$(base64 -w0 /tmp/vendor-page)" -f encoding=base64 --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context=vendor-page-review -f description="$BLOB"
