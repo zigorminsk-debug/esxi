@@ -28,3 +28,6 @@ android/app/src/main/assets/
 docs/reference-candidates*/
 
 image-search/
+
+# Standalone Go RAID Assistant build output
+raid-build/

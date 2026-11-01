@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+  <title>ESXi RAID Assistant</title>
+  <style>/*__CSS__*/</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Этапы проверки">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 3 27 8v7c0 7-4.4 11.6-11 14-6.6-2.4-11-7-11-14V8z"/><path d="M10 15h12M10 19h8M10 11h12"/></svg></span><span><strong>ESXi RAID</strong><small>ASSISTANT</small></span></div>
+    <div class="side-caption">РАБОЧИЙ ПРОЦЕСС</div>
+    <nav class="side-nav">
+      <button class="nav-item active" data-nav="connect"><span class="nav-number">01</span><span>Подключение<small>Защищённый вход</small></span></button>
+      <button class="nav-item" data-nav="diagnostics"><span class="nav-number">02</span><span>Диагностика<small>Хост и контроллер</small></span></button>
+      <button class="nav-item" data-nav="package"><span class="nav-number">03</span><span>Пакет LSA<small>Подбор и загрузка</small></span></button>
+      <button class="nav-item" data-nav="instructions"><span class="nav-number">04</span><span>Инструкция<small>Пошаговые действия</small></span></button>
+    </nav>
+    <div class="sidebar-foot"><span class="side-lock">◎</span><div><strong>Только чтение</strong><p>Никаких изменений на сервере без вас.</p></div></div>
+    <div class="side-version">ESXi 8.x <span>•</span> v0.1.0</div>
+  </aside>
+  <main class="main" id="top">
+    <header class="topbar"><div class="crumb"><span>УТИЛИТЫ</span><b>/</b><strong>RAID Assistant</strong></div><div class="top-actions"><div class="font-control" aria-label="Размер текста"><button id="fontMinus" title="Уменьшить шрифт" aria-label="Уменьшить шрифт">А−</button><button id="fontPlus" title="Увеличить шрифт" aria-label="Увеличить шрифт">А+</button></div><span class="top-readonly"><span></span> БЕЗ ИЗМЕНЕНИЙ</span></div></header>
+    <div class="content">
+      <div class="demo-banner" id="demoBanner" hidden>Демонстрационный режим: показаны вымышленные данные, подключение к ESXi не выполняется.</div>
+      <section class="intro"><div><div class="eyebrow"><span class="eyebrow-dot"></span> ПОМОЩНИК ПО УСТАНОВКЕ</div><h1>Управление RAID<br><span>через ESXi</span></h1><p>Проверьте совместимость хоста, подготовьте LSA / LWA и получите инструкцию для доступа через порт <strong>35557</strong>.</p><div class="intro-tags"><span>ESXi 8.x</span><span>Broadcom / LSI</span><span>HTTPS :35557</span></div></div><div class="hero-visual" aria-hidden="true"><div class="hero-orbit orbit-one"></div><div class="hero-orbit orbit-two"></div><div class="hero-card"><svg viewBox="0 0 80 80"><rect x="12" y="16" width="56" height="14" rx="4"/><rect x="12" y="33" width="56" height="14" rx="4"/><rect x="12" y="50" width="56" height="14" rx="4"/><path d="M22 23h2M22 40h2M22 57h2M32 23h24M32 40h24M32 57h16"/></svg></div><span class="hero-badge">✓</span></div></section>
+      <section id="connect" class="section-block">
+        <div class="section-heading"><div><div class="section-kicker">ШАГ 01 <span>·</span> ПОДКЛЮЧЕНИЕ</div><h2>Данные хоста</h2><p>Укажите адрес непосредственно ESXi, а не vCenter.</p></div><span class="section-index">01</span></div>
+        <div class="panel connect-panel"><div class="panel-top"><div class="icon-tile blue">⌁</div><div><h3>Безопасное соединение</h3><p>Сначала сверим сертификат. Пароль передаётся только после проверки доверия.</p></div><span class="tag tag-blue">TLS 1.2+</span></div>
+          <form id="connectionForm" autocomplete="off">
+            <div class="form-grid"><label class="field field-address"><span>IP-адрес или DNS-имя ESXi</span><input id="address" name="address" placeholder="Например, 192.168.1.10" spellcheck="false" required><small>Порт 443 по умолчанию; для лаборатории можно указать другой.</small></label><label class="field"><span>Логин</span><input id="username" name="username" placeholder="root" autocomplete="off" required></label><label class="field"><span>Пароль</span><div class="password-wrap"><input id="password" name="password" type="password" placeholder="Введите пароль" autocomplete="new-password" required><button id="showPassword" type="button" aria-label="Показать пароль" title="Показать пароль">◉</button></div></label></div>
+            <div class="form-actions"><button class="button primary" id="certButton" type="submit"><span>Проверить сертификат</span><span aria-hidden="true">→</span></button><span class="privacy-note"><span>◈</span> Пароль не сохраняется в файл</span></div>
+          </form>
+          <div id="certPanel" class="certificate" hidden><div class="cert-heading"><div class="cert-icon">✓</div><div><h4 id="certTitle">Сертификат сервера</h4><p id="certMessage"></p></div></div><div class="fingerprint"><div><span>SHA-256 ОТПЕЧАТОК</span><code id="certFingerprint"></code></div><button class="text-button" id="copyCert" type="button">Копировать</button></div><div id="pinArea" hidden><p class="verify-explain">Сравните отпечаток с независимым источником: например, через доверенную консоль iDRAC/iLO выполните на хосте <code>openssl x509 -in /etc/vmware/ssl/rui.crt -noout -sha256 -fingerprint</code>. Не доверяйте отпечатку только потому, что он показан здесь.</p><label class="field"><span>Введите независимо проверенный SHA-256</span><input id="confirmedPin" placeholder="64 символа SHA-256" autocomplete="off" spellcheck="false"></label></div><div class="cert-footer"><button id="scanButton" class="button primary" type="button">Подключиться и проверить <span>→</span></button><span id="certExpiry" class="cert-expiry"></span></div></div>
+        </div>
+        <div class="security-strip"><span>✧</span><p><strong>Учётные данные не сохраняются в файл.</strong> Логин и пароль передаются только выбранному ESXi через проверенное TLS-соединение и не отправляются производителю пакета.</p></div>
+      </section>
+      <section id="diagnostics" class="section-block downstream">
+        <div class="section-heading"><div><div class="section-kicker">ШАГ 02 <span>·</span> ДИАГНОСТИКА</div><h2>Что обнаружено</h2><p>Данные из ESXi API и доступные проверки без изменения хоста.</p></div><span class="section-index">02</span></div>
+        <div id="diagnosticEmpty" class="empty-panel"><div class="empty-icon">⌁</div><div><strong>Ожидаем подключения к хосту</strong><p>После проверки здесь появятся версия ESXi, контроллеры и состояние доступных параметров.</p></div></div>
+        <div id="diagnosticResult" hidden><div class="host-summary"><div><span>ХОСТ ESXI</span><strong id="hostName">—</strong><small id="hostAddress">—</small></div><div><span>ВЕРСИЯ И СБОРКА</span><strong id="hostVersion">—</strong><small id="hostFullName">—</small></div><div><span>СЕРВЕР</span><strong id="hostModel">—</strong><small>Модель по данным API</small></div></div><div class="panel inner-panel"><div class="panel-heading"><div><h3>Адаптеры хранения</h3><p>PCI ID помогает отличить розничный контроллер от OEM.</p></div><span class="tag" id="adapterCount">0</span></div><div class="table-wrap"><table><thead><tr><th>АДАПТЕР / МОДЕЛЬ</th><th>ДРАЙВЕР</th><th>PCI И SUBSYSTEM ID</th><th>КАТАЛОГ</th></tr></thead><tbody id="controllerRows"></tbody></table></div><p class="table-note">Отсутствие совпадения не доказывает несовместимость: каталог приложения ограничен.</p></div><div class="check-grid" id="checks"></div><div id="hostWarnings" class="warning-box" hidden></div></div>
+      </section>
+      <section id="package" class="section-block downstream">
+        <div class="section-heading"><div><div class="section-kicker">ШАГ 03 <span>·</span> ПАКЕТ</div><h2>LSA / Light Weight Agent</h2><p>Загрузка только из официального источника и проверка файла.</p></div><span class="section-index">03</span></div>
+        <div id="packageEmpty" class="empty-panel"><div class="empty-icon">↓</div><div><strong>Подбор после диагностики</strong><p>Точная модель контроллера и версия ESXi определяют доступный вариант.</p></div></div>
+        <div id="packageResult" hidden><div id="packageNoMatch" class="warning-box" hidden><strong>Автоматический подбор недоступен</strong><p id="noMatchReason">Для этого ESXi или полного PCI ID в каталоге нет точного совпадения. Обратитесь к производителю контроллера; LWM не заменяет LSA для управления.</p><div class="link-row"><button data-link="broadcom">Broadcom ↗</button><button data-link="dell">Dell ↗</button><button data-link="hpe">HPE ↗</button><button data-link="lenovo">Lenovo ↗</button></div></div><div id="packageMatch" class="panel inner-panel" hidden><div class="package-heading"><div class="package-icon">⇩</div><div><div class="section-kicker">КАНДИДАТ ИЗ КАТАЛОГА</div><h3 id="packageTitle">LSA for ESXi</h3><p id="packageSubtitle"></p></div><span class="tag tag-amber">НУЖНА ПРОВЕРКА</span></div><div class="package-meta"><div><span>МОДЕЛЬ</span><strong id="packageModel"></strong></div><div><span>ВЕРСИЯ</span><strong id="packageVersion"></strong></div><div><span>ИСТОЧНИК</span><strong>Broadcom HTTPS</strong></div></div><p class="package-disclaimer">Совпадение PCI ID с каталогом не подтверждает firmware, конкретный build ESXi, OEM и подпись. Перед установкой сверяйте README и политику доверия хоста.</p><div class="link-row"><button data-link="product">Страница модели ↗</button><button data-link="readme">README ↗</button><button data-link="license">Условия Broadcom ↗</button></div><label class="consent"><input id="consent" type="checkbox"><span>Я прочитал и принимаю условия Broadcom для этого пакета.</span></label><div class="package-actions"><button id="downloadButton" class="button primary" type="button" disabled>Скачать пакет <span>↓</span></button><button id="importButton" class="button secondary" type="button">Выбрать ZIP / VIB</button></div><p class="subtle">Если загрузка недоступна из-за сети или условий производителя, скачайте файл на официальном сайте и выберите его вручную.</p><div id="bundleInfo" class="bundle-info" hidden></div></div></div>
+      </section>
+      <section id="instructions" class="section-block downstream">
+        <div class="section-heading"><div><div class="section-kicker">ШАГ 04 <span>·</span> ИНСТРУКЦИЯ</div><h2>Дальнейшие действия</h2><p>Команды подготовлены для ручного выполнения администратором.</p></div><span class="section-index">04</span></div>
+        <div id="reportEmpty" class="empty-panel"><div class="empty-icon">▤</div><div><strong>Инструкция появится здесь</strong><p>Дождитесь диагностики, затем выберите доступный datastore и доверенный адрес.</p></div></div>
+        <div id="reportResult" hidden><div class="panel report-controls"><div class="form-grid two"><label class="field"><span>Datastore для загрузки VIB</span><select id="datastore"><option value="">Выберите доступный datastore</option></select><small>Показываются доступные хранилища, найденные через ESXi API.</small></label><label class="field"><span>Доверенный IP или сеть для firewall</span><input id="accessIp" placeholder="Например, 192.168.1.10/32" spellcheck="false"><small>Уточните реальный адрес с учётом маршрутизации / NAT.</small></label></div><div class="report-actions"><button class="button secondary" id="refreshReport" type="button">Обновить инструкцию</button><button class="button secondary" id="copyReport" type="button">Копировать всё</button><button class="button primary" id="saveReport" type="button">Сохранить .md <span>↓</span></button></div></div><div class="report-note"><span>!</span><p><strong>Ничего не устанавливается автоматически.</strong> Неизвестное нужно проверить, а команды — запускать только после изучения README и плана отката.</p></div><div id="steps" class="steps"></div><div class="report-bottom"><button id="openFolder" class="text-button" type="button">Открыть папку результатов ↗</button><button data-link="guide" class="text-button" type="button">Официальная инструкция Broadcom ↗</button></div></div>
+      </section>
+      <footer><span>ESXi RAID Assistant · локальная утилита</span><span>Совместимость определяется производителем оборудования</span></footer>
+    </div>
+  </main>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="busy" class="busy" hidden><div class="spinner"></div><strong id="busyText">Проверяем…</strong><span>Это может занять некоторое время</span></div>
+<script>/*__BRIDGE__*/</script>
+<script>/*__JS__*/</script>
+</body>
+</html>
