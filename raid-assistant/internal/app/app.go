@@ -237,6 +237,20 @@ func (a *App) Link(kind string) (string, error) {
 		return "https://support.lenovo.com/", nil
 	case "runtime":
 		return "https://developer.microsoft.com/en-us/microsoft-edge/webview2/", nil
+	case "ext-storcli":
+		return "https://techdocs.broadcom.com/content/dam/broadcom/techdocs/data-center-solutions/tools/generated-pdfs/StorCLI-12Gbs-MegaRAID-Tri-Mode.pdf", nil
+	case "ext-storcli2":
+		return "https://techdocs.broadcom.com/us/en/storage-and-ethernet-connectivity/enterprise-storage-solutions/megaraid8-tri-mode-software/1-0/StorCLI_MR8_Intro/Install_StorCLI2_MR/v11673477.html", nil
+	case "ext-hpe":
+		return "https://support.hpe.com/hpesc/public/docDisplay?docId=sd00007728en_us&page=GUID-28B75ABA-5F9D-48E9-856B-FAC9C36B1F6D.html&docLocale=en_US", nil
+	case "ext-dell":
+		return "https://www.dell.com/support/kbdoc/en-us/000178050/support-for-dell-emc-idrac-service-module", nil
+	case "ext-depot":
+		return "https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/managing-host-and-cluster-lifecycle/working-with-vsphere-lifecycle-manager-depots.html", nil
+	case "ext-vgpu":
+		return "https://docs.nvidia.com/vgpu/20.0/grid-software-quick-start-guide/installing-configuring-vgpu-manager-guest-driver.html", nil
+	case "ext-cdp":
+		return "https://helpcenter.veeam.com/docs/vbr/userguide/cdp_io_filter_install.html", nil
 	}
 	if a.host == nil {
 		return "", errors.New("Сначала проверьте ESXi")

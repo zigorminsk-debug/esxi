@@ -90,3 +90,19 @@ test('font controls persist and the interface fits a narrow window', async () =>
   const overflow=await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);assert.ok(overflow<=1,`horizontal overflow ${overflow}`);
  } finally {await p.close()}
 });
+
+test('additional ESXi packages are clearly informational and link to fixed vendor topics', async () => {
+ const p=await pageFor();try {
+  await p.goto(base);
+  await p.evaluate(()=>{window.openedKind='';window.goOpenLink=async kind=>{window.openedKind=kind}});
+  await p.locator('[data-nav="extensions"]').click();
+  const section=p.locator('#extensions');
+  assert.match(await section.innerText(),/обзор, а не автоматическая установка/i);
+  assert.match(await section.innerText(),/StorCLI/);
+  assert.match(await section.innerText(),/SSACLI/);
+  assert.match(await section.innerText(),/iDRAC/);
+  assert.match(await section.innerText(),/vGPU/);
+  await section.locator('[data-link="ext-hpe"]').click();
+  assert.equal(await p.evaluate(()=>window.openedKind),'ext-hpe');
+ }finally{await p.close()}
+});

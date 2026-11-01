@@ -48,6 +48,10 @@ type Chromium struct {
 
 	environment *ICoreWebView2Environment
 
+	// The only app-initiated NavigateToString is the embedded document. Its
+	// NavigationStarting URI may differ from its eventual about:blank origin.
+	pendingLocalNavigation uint32
+
 	// Settings
 	DataPath string
 
@@ -142,10 +146,14 @@ func (e *Chromium) Navigate(url string) {
 }
 
 func (e *Chromium) NavigateToString(htmlContent string) {
-	_, _, _ = e.webview.vtbl.NavigateToString.Call(
+	atomic.StoreUint32(&e.pendingLocalNavigation, 1)
+	hr, _, _ := e.webview.vtbl.NavigateToString.Call(
 		uintptr(unsafe.Pointer(e.webview)),
 		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(htmlContent))),
 	)
+	if int32(hr) != 0 {
+		atomic.StoreUint32(&e.pendingLocalNavigation, 0)
+	}
 }
 
 func (e *Chromium) Init(script string) {

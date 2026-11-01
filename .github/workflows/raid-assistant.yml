@@ -95,6 +95,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item raid-assistant/README.md raid-build/README-RAID-Assistant.md
+          Copy-Item raid-assistant/ESXI-8-EXTENSIONS.md raid-build/ESXI-8-EXTENSIONS.md
           Copy-Item signing/public/windows-certificate.sha256 raid-build/
           $file='ESXi-RAID-Assistant-0.1.0-windows-x64.exe'
           $hash=(Get-FileHash "raid-build/$file" -Algorithm SHA256).Hash.ToLower()

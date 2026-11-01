@@ -28,6 +28,8 @@
 
 Файлы сохраняются в `%USERPROFILE%\Downloads\ESXi-RAID-Assistant\<сеанс>`. Отчёты и скачанные файлы могут содержать имена, адреса и сведения об инфраструктуре — относитесь к ним как к внутренним данным. Пароль в отчёт не включается. Размер текста меняется кнопками **А− / А+**.
 
+Дополнительные возможности ESXi 8 и пакеты для RAID, HPE, Dell, драйверов, vGPU и CDP описаны в [обзоре расширений](ESXI-8-EXTENSIONS.md). В версии 0.1.0 они ещё не подбираются автоматически.
+
 ## Источник пакета и доверие
 
 - [Официальная страница пакета и лицензия Broadcom](https://docs.broadcom.com/docs/1232745889), [README](https://docs.broadcom.com/docs/1232745888), [инструкция по LWA для ESXi 8](https://techdocs.broadcom.com/us/en/storage-and-ethernet-connectivity/enterprise-storage-solutions/lsa-lsi-storage-authority-software/2-18/Managing-Light-Weight-Agent/Installing-LWA-on-VMware-ESXi/Installing-LWA-on-VMware-ESXi8x.html).

@@ -115,3 +115,19 @@ func TestImportAndSaveAreLocalAndCredentialFree(t *testing.T) {
 		t.Fatal("report escaped output directory")
 	}
 }
+
+func TestExtensionLinksAreFixedAndAvailableBeforeLogin(t *testing.T) {
+	a, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"ext-storcli", "ext-storcli2", "ext-hpe", "ext-dell", "ext-depot", "ext-vgpu", "ext-cdp"} {
+		link, err := a.Link(kind)
+		if err != nil || !strings.HasPrefix(link, "https://") {
+			t.Fatalf("%s: %s %v", kind, link, err)
+		}
+	}
+	if _, err := a.Link("https://attacker.invalid/"); err == nil {
+		t.Fatal("arbitrary link was allowed")
+	}
+}

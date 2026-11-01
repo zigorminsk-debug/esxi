@@ -102,7 +102,7 @@ func runWindow(a *app.App) error {
 		w.Init(`window.addEventListener('DOMContentLoaded', async function(){
 		  let invalidRejected = false;
 		  try { await window.goCertStart('https://u:p@invalid.example'); } catch (_) { invalidRejected = true; }
-		  await window.goSmokeReady(invalidRejected && !!document.querySelector('#connectionForm') && !window.RAID_DEMO);
+		  await window.goSmokeReady(invalidRejected && !!document.querySelector('#connectionForm') && !!document.querySelector('#extensions') && !window.RAID_DEMO);
 		});`)
 	}
 	selfTestTrace("bindings registered")
