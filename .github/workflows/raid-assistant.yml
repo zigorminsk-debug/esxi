@@ -34,7 +34,9 @@ jobs:
                   if i.filename.lower().endswith('.vib') and i.file_size < 100_000_000:
                       data = z.read(i)
                       result['entries'][-1].update({'sha256': hashlib.sha256(data).hexdigest(), 'magic': data[:12].hex()})
-                  if depth < 2 and i.filename.lower().endswith('.zip') and i.file_size < 100_000_000:
+                  if 'readme' in i.filename.lower() and i.file_size < 100_000:
+                      result['entries'][-1]['text'] = z.read(i).decode('utf-8', errors='replace')
+                  if depth < 4 and i.filename.lower().endswith('.zip') and i.file_size < 100_000_000:
                       try:
                           walk(zipfile.ZipFile(io.BytesIO(z.read(i))), depth+1)
                       except zipfile.BadZipFile:
