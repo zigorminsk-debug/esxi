@@ -29,7 +29,7 @@ func Scan(ctx context.Context, req Request) (*Host, error) {
 		return nil, err
 	}
 	hostname, address, _ := ParseAddress(req.Address)
-	tlsCfg, err := TLSConfig(req.Pin)
+	tlsCfg, err := tlsConfig(req.Pin, req.AllowExpired)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func Scan(ctx context.Context, req Request) (*Host, error) {
 func scanWithClient(ctx context.Context, req Request, hostname, address string, sc *soap.Client) (*Host, error) {
 	vc, err := vim25.NewClient(ctx, sc)
 	if err != nil {
-		return nil, errors.New("Не удалось установить защищённое соединение с ESXi API. Проверьте адрес и доверие сертификату")
+		return nil, errors.New("Не удалось открыть API ESXi. Проверьте IP-адрес, порт 443 и доступность хоста; если сертификат сервера изменился, повторите подключение")
 	}
 	if vc.ServiceContent.About.ApiType != "HostAgent" {
 		return nil, errors.New("Это не прямой API хоста ESXi (возможно, указан vCenter). Введите адрес самого ESXi")

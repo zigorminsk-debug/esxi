@@ -18,12 +18,20 @@ async function pageFor(viewport={width:1440,height:900}) {
   p.setDefaultTimeout(5000);
   return p;
 }
-async function certificate(p) {
-  await p.fill('#address','192.0.2.10'); await p.fill('#username','root'); await p.fill('#password','test-password-not-real');
-  await p.click('#certButton'); await p.locator('#certPanel').waitFor({state:'visible'});
+async function fillCredentials(p, address='192.0.2.10', password='test-password-not-real') {
+  await p.fill('#address',address); await p.fill('#username','root'); await p.fill('#password',password);
 }
 async function scan(p) {
-  await certificate(p); await p.click('#scanButton'); await p.locator('#diagnosticResult').waitFor({state:'visible'});
+  await fillCredentials(p); await p.click('#connectButton'); await p.locator('#diagnosticResult').waitFor({state:'visible'});
+}
+async function useUntrustedFixture(p, validTime=true) {
+  await p.evaluate(valid => {
+    const oldPoll=window.goPoll, oldScan=window.goScanStart;
+    window.fixtureScans=[];
+    window.goScanStart=req=>{window.fixtureScans.push({...req}); return oldScan(req);};
+    window.goCertStart=async()=> 'untrusted-fixture';
+    window.goPoll=async id=>id==='untrusted-fixture'?{state:'done',data:{sha256:'AB'.repeat(32),notAfter:'2030-01-01T00:00:00Z',trusted:false,validTime:valid}}:oldPoll(id);
+  }, validTime);
 }
 
 test('demonstration workflow: consent, package, report and no credential network request', async () => {
@@ -48,24 +56,87 @@ test('demonstration workflow: consent, package, report and no credential network
   await p.fill('#address','192.0.2.11');
   assert.equal(await p.locator('#diagnosticResult').isVisible(),false);
   assert.equal(await p.locator('#reportResult').isVisible(),false);
-  assert.equal(await p.locator('#certPanel').isVisible(),false);
+  assert.equal(await p.locator('#connectionWarning').isVisible(),false);
  } finally {await p.close()}
 });
 
-test('untrusted certificate requires independently entered full matching pin', async () => {
+test('self-signed ESXi needs no file or fingerprint, but user must accept the warning', async () => {
  const p=await pageFor();try {
-  await p.goto(base);
-  await p.evaluate(() => {
-   const oldPoll=window.goPoll;
-   window.goCertStart=async()=> 'untrusted';
-   window.goPoll=async id=>id==='untrusted'?{state:'done',data:{sha256:'AB'.repeat(32),notAfter:'2030-01-01T00:00:00Z',trusted:false,validTime:true}}:oldPoll(id);
+  await p.goto(base); await useUntrustedFixture(p); await fillCredentials(p);
+  await p.click('#connectButton'); await p.locator('#securityDialog').waitFor({state:'visible'});
+  assert.match(await p.locator('#securityDialog').innerText(),/подмене сервера пароль может быть перехвачен/i);
+  assert.equal(await p.evaluate(()=>window.fixtureScans.length),0, 'credentials sent before consent');
+  await p.click('#securityCancel');
+  assert.match(await p.locator('#connectionStatus').innerText(),/отменено.*не отправлен/i);
+  assert.equal(await p.locator('#password').inputValue(),'');
+  assert.equal(await p.evaluate(()=>window.fixtureScans.length),0);
+  await p.fill('#password','test-password-not-real'); await p.click('#connectButton');
+  await p.locator('#securityDialog').waitFor({state:'visible'}); await p.click('#securityContinue');
+  await p.locator('#diagnosticResult').waitFor({state:'visible'});
+  assert.equal(await p.locator('#password').inputValue(),'');
+  assert.match(await p.locator('#connectionWarning').innerText(),/не подтверждена/i);
+  const req=await p.evaluate(()=>window.fixtureScans[0]);
+  assert.equal(req.password,'test-password-not-real'); assert.equal(req.pin,'AB'.repeat(32)); assert.equal(req.allowExpired,false);
+ } finally {await p.close()}
+});
+
+test('optional independent pin is checked before login and expired certificates need explicit consent', async () => {
+ const p=await pageFor();try {
+  await p.goto(base); await useUntrustedFixture(p); await fillCredentials(p);
+  await p.locator('.connection-security summary').click(); await p.fill('#confirmedPin','CD'.repeat(32));
+  await p.click('#connectButton'); await p.locator('#connectionStatus.error').waitFor();
+  assert.match(await p.locator('#connectionStatus').innerText(),/не совпадает.*Пароль не отправлен/i);
+  assert.equal(await p.evaluate(()=>window.fixtureScans.length),0); assert.equal(await p.locator('#password').inputValue(),'');
+  await p.fill('#confirmedPin','AB'.repeat(32)); await p.fill('#password','test-password-not-real'); await p.click('#connectButton');
+  await p.locator('#diagnosticResult').waitFor({state:'visible'}); assert.equal(await p.locator('#securityDialog').isHidden(),true);
+  assert.equal(await p.locator('#connectionWarning').isHidden(),true);
+  assert.equal((await p.evaluate(()=>window.fixtureScans[0])).pin,'AB'.repeat(32));
+ } finally {await p.close()}
+ const q=await pageFor();try {
+  await q.goto(base); await useUntrustedFixture(q,false); await fillCredentials(q); await q.click('#connectButton');
+  await q.locator('#securityDialog').waitFor({state:'visible'}); assert.match(await q.locator('#securityDialog').innerText(),/Срок действия.*истёк/s);
+  await q.click('#securityContinue'); await q.locator('#diagnosticResult').waitFor({state:'visible'});
+  assert.equal((await q.evaluate(()=>window.fixtureScans[0])).allowExpired,true);
+  assert.match(await q.locator('#connectionWarning').innerText(),/не подтверждена/i);
+ } finally {await q.close()}
+});
+
+test('network and login errors remain visible, passwords are cleared, and prior host data is invalidated', async () => {
+ const p=await pageFor();try {
+  await p.goto(base); await scan(p);
+  await p.evaluate(()=>{window.goCertStart=async()=>{throw new Error('Не удалось подключиться к ESXi. Проверьте IP-адрес и порт 443');};});
+  await p.fill('#password','not-a-real-password');await p.click('#connectButton');await p.locator('#connectionStatus.error').waitFor();
+  assert.match(await p.locator('#connectionStatus').innerText(),/IP-адрес.*порт 443/);
+  assert.equal(await p.locator('#diagnosticResult').isVisible(),false);assert.equal(await p.locator('#password').inputValue(),'');
+  await p.evaluate(()=>{
+   const poll=window.goPoll;
+   window.goCertStart=async()=> 'trusted-fixture';window.goScanStart=async()=> 'bad-login';
+   window.goPoll=async id=>id==='trusted-fixture'?{state:'done',data:{sha256:'A1'.repeat(32),trusted:true,validTime:true}}:id==='bad-login'?{state:'error',error:'Вход в ESXi не выполнен: проверьте логин, пароль и разрешения учётной записи'}:poll(id);
   });
-  await certificate(p);assert.equal(await p.locator('#pinArea').isVisible(),true);
-  await p.fill('#confirmedPin','incorrect');await p.click('#scanButton');
-  assert.match(await p.locator('#toast').innerText(),/полный отпечаток/);
-  assert.equal(await p.locator('#diagnosticResult').isVisible(),false);
-  await p.fill('#confirmedPin','AB'.repeat(32));await p.click('#scanButton');
-  await p.locator('#diagnosticResult').waitFor({state:'visible'});assert.equal(await p.locator('#password').inputValue(),'');
+  await p.fill('#password','wrong-password');await p.click('#connectButton');
+  await p.waitForFunction(()=>document.querySelector('#connectionStatus').textContent.includes('Вход в ESXi не выполнен'));
+  assert.match(await p.locator('#connectionStatus').innerText(),/логин, пароль/);
+  assert.equal(await p.locator('#password').inputValue(),'');assert.equal(await p.locator('#diagnosticResult').isVisible(),false);
+ } finally {await p.close()}
+});
+
+test('a stalled native bridge times out with a useful visible error', async () => {
+ const p=await pageFor();try {
+  p.setDefaultTimeout(16000);await p.goto(base);await p.evaluate(()=>{window.goCertStart=()=>new Promise(()=>{});});
+  await fillCredentials(p);await p.click('#connectButton');
+  await p.locator('#busy').waitFor({state:'visible'});await p.locator('#connectionStatus.error').waitFor({timeout:15000});
+  assert.match(await p.locator('#connectionStatus').innerText(),/Нет ответа от модуля программы/);
+  assert.equal(await p.locator('#busy').isHidden(),true);assert.equal(await p.locator('#connectButton').isEnabled(),true);assert.equal(await p.locator('#password').inputValue(),'');
+ } finally {await p.close()}
+});
+
+test('a native file chooser is not cut off by the connection RPC timeout', async () => {
+ const p=await pageFor();try {
+  await p.goto(base);await scan(p);await p.clock.install();
+  await p.evaluate(()=>{window.goImportStart=()=>new Promise(resolve=>{window.releaseFixtureChooser=()=>resolve(null);});});
+  await p.click('#importButton');await p.locator('#busy').waitFor({state:'visible'});
+  await p.clock.fastForward(13000);assert.equal(await p.locator('#busy').isVisible(),true);
+  await p.evaluate(()=>window.releaseFixtureChooser());await p.locator('#busy').waitFor({state:'hidden'});
  } finally {await p.close()}
 });
 
@@ -144,7 +215,7 @@ test('saved profiles do not persist passwords; catalog, wizard, and screenshots 
   await p.evaluate(()=>localStorage.removeItem('raid-demo-hosts'));await p.fill('#address','192.0.2.42');await p.fill('#username','operator');await p.fill('#password','do-not-store-me');await p.fill('#profileName','Lab42');await p.click('#saveProfile');
   assert.match(await p.locator('#hostProfiles').innerText(),/Lab42/);assert.equal(await p.evaluate(()=>localStorage.getItem('raid-demo-hosts').includes('do-not-store-me')),false);
   await p.reload();await p.selectOption('#hostProfiles','192.0.2.42');assert.equal(await p.locator('#username').inputValue(),'operator');assert.equal(await p.locator('#password').inputValue(),'');
-  await p.fill('#password','another-not-real');await p.click('#certButton');await p.locator('#certPanel').waitFor({state:'visible'});await p.click('#scanButton');await p.locator('#diagnosticWizard').waitFor({state:'visible'});
+  await p.fill('#password','another-not-real');await p.click('#connectButton');await p.locator('#diagnosticWizard').waitFor({state:'visible'});
   assert.match(await p.locator('#diagnosticSteps').innerText(),/Факт:/);await p.click('#probePort');
   await p.locator('#componentSearch').fill('NSX');assert.match(await p.locator('#componentGrid').innerText(),/NSX host modules/);assert.equal(await p.locator('#componentGrid .extension-card').count(),1);
   await p.locator('#componentSearch').fill('');await p.selectOption('#componentFilter','found');assert.match(await p.locator('#componentGrid').innerText(),/tools-light/);

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const state = { cert: null, certAddress: '', host: null, bundle: null, report: null, snapshot: null, sshKey: null, components: [], profiles: [], monitorSeq: 0, alertSeq: 0, busy: false, scale: 1 };
+  const state = { certAddress: '', connecting: false, host: null, bundle: null, report: null, snapshot: null, sshKey: null, components: [], profiles: [], monitorSeq: 0, alertSeq: 0, busy: false, scale: 1 };
   const hide = (id, value) => { $(id).hidden = value; };
   const set = (id, text) => { $(id).textContent = text || '—'; };
   function toast(text) { $('toast').textContent = String(text); $('toast').hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { $('toast').hidden = true; }, 6000); }
@@ -12,19 +12,59 @@
     try { if (window.goClipboard) { await window.goClipboard(text); } else { await navigator.clipboard.writeText(text); } toast('Скопировано'); }
     catch (_) { toast('Не удалось скопировать. Выделите текст вручную.'); }
   }
-  async function job(start, label) {
+  // The native bridge should respond immediately. A stuck RPC must not leave
+  // the user staring at a spinner forever; actual network jobs have their own
+  // longer deadline and are polled separately.
+  async function rpc(call, timeoutMs = 12000) {
+    let timer;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(call),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Нет ответа от модуля программы. Перезапустите приложение и повторите действие.')), timeoutMs); })
+      ]);
+    } finally { clearTimeout(timer); }
+  }
+  async function job(start, label, timeoutMs = 360000, startTimeoutMs = 0) {
     if (state.busy) return null;
     state.busy = true; $('busyText').textContent = label; hide('busy', false);
     try {
-      const id = await start();
+      // Native file choosers legitimately wait for the user; only connection
+      // RPC starts get a short bridge timeout. Network job time starts after
+      // the chooser/start call returns.
+      const id = startTimeoutMs ? await rpc(start, startTimeoutMs) : await start();
       if (!id) return null;
-      for (;;) {
-        const result = await window.goPoll(id);
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const result = await rpc(() => window.goPoll(id));
+        if (!result || !['running', 'done', 'error'].includes(result.state)) throw new Error('Модуль программы вернул некорректный ответ. Повторите попытку.');
         if (result.state === 'done') return result.data;
         if (result.state === 'error') throw new Error(result.error || 'Ошибка');
         await new Promise(resolve => setTimeout(resolve, 300));
       }
+      throw new Error('Время ожидания истекло. Проверьте доступность ESXi и попробуйте ещё раз.');
     } finally { state.busy = false; hide('busy', true); }
+  }
+  function connectionStatus(text, kind = '', reveal = false) {
+    const box = $('connectionStatus'); box.textContent = text; box.className = `connection-status ${kind}`.trim();
+    if (reveal) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function confirmUnverified(reason, unverified) {
+    return new Promise(resolve => {
+      const dialog = $('securityDialog'), cancel = $('securityCancel'), proceed = $('securityContinue');
+      $('securityDialogTitle').textContent = unverified ? 'Сервер не подтверждён' : 'Проверьте срок сертификата';
+      $('securityDialogMessage').textContent = reason;
+      const previous = document.activeElement;
+      const finish = accepted => {
+        hide('securityDialog', true); cancel.removeEventListener('click', no); proceed.removeEventListener('click', yes); document.removeEventListener('keydown', key);
+        if (previous && previous.focus) previous.focus(); resolve(accepted);
+      };
+      const no = () => finish(false), yes = () => finish(true), key = event => {
+        if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+        else if (event.key === 'Tab') { event.preventDefault(); (document.activeElement === cancel ? proceed : cancel).focus(); }
+      };
+      cancel.addEventListener('click', no); proceed.addEventListener('click', yes); document.addEventListener('keydown', key);
+      hide('securityDialog', false); cancel.focus();
+    });
   }
   function navigate(id) {
     document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === id));
@@ -37,7 +77,6 @@
   try { const n = Number(localStorage.getItem('raid-assistant-font')); if (n >= .9 && n <= 1.7) state.scale = n; } catch (_) {}
   fontScale(0);
   $('fontPlus').addEventListener('click', () => fontScale(.1)); $('fontMinus').addEventListener('click', () => fontScale(-.1));
-  $('copyCert').addEventListener('click', () => { if (state.cert) copy(state.cert.sha256); });
   function resetResults() {
     state.host = null; state.bundle = null; state.report = null; state.snapshot = null; state.sshKey = null; state.monitorSeq = 0; state.alertSeq = 0;
     $('sshPassword').value = ''; $('sshPin').value = ''; $('sshConsent').checked = false; hide('sshKeyPanel', true); hide('raidResult', true); hide('diagnosticWizard', true); $('relationsResult').replaceChildren();
@@ -46,51 +85,87 @@
     hide('reportEmpty', false); hide('reportResult', true);
   }
   $('address').addEventListener('input', () => {
-    if (state.certAddress !== $('address').value.trim()) {
-      state.cert = null; hide('certPanel', true);
+    if (state.certAddress && state.certAddress !== $('address').value.trim()) {
+      state.certAddress = ''; $('confirmedPin').value = '';
       // Do not leave a previous host's package or commands next to a new IP.
-      if (state.host) { resetResults(); if (window.goInvalidate) window.goInvalidate().then(() => { refreshMonitor(); loadComponents(); }).catch(() => {}); }
+      if (state.host) { resetResults(); if (window.goInvalidate) rpc(() => window.goInvalidate()).then(() => { refreshMonitor(); loadComponents(); }).catch(() => {}); }
+      connectionStatus('Адрес изменён. Введите пароль и подключитесь к новому хосту.');
     }
   });
   $('connectionForm').addEventListener('submit', async event => {
     event.preventDefault();
-    const address = $('address').value.trim();
-    try {
-      state.cert = null; hide('certPanel', true);
-      const cert = await job(() => window.goCertStart(address), 'Получаем сертификат ESXi…');
-      if (!cert) return;
-      state.cert = cert; state.certAddress = address;
-      set('certFingerprint', cert.sha256); $('confirmedPin').value = '';
-      const expiry = new Date(cert.notAfter);
-      $('certExpiry').textContent = Number.isNaN(expiry.getTime()) ? '' : `Действует до ${expiry.toLocaleDateString('ru-RU')}`;
-      $('certTitle').textContent = cert.trusted ? 'Сертификат доверен системой' : 'Нужно проверить сертификат';
-      $('certMessage').textContent = cert.trusted ? 'Системная проверка сертификата и имени хоста прошла. Теперь можно отправить учётные данные по TLS.' : 'Центр сертификации или имя не подтверждены. Сверьте отпечаток через независимый доверенный канал.';
-      hide('pinArea', !!cert.trusted);
-      $('scanButton').disabled = !cert.validTime;
-      if (!cert.validTime) $('certMessage').textContent = 'Срок действия сертификата истёк или ещё не начался. Замените сертификат и проверьте время на хосте.';
-      hide('certPanel', false);
-    } catch (e) { toast(message(e)); }
-  });
-  $('scanButton').addEventListener('click', async () => {
-    if (!state.cert || state.certAddress !== $('address').value.trim()) { toast('Сначала заново проверьте сертификат'); return; }
-    if (!$('username').value.trim() || !$('password').value) { toast('Введите логин и пароль ESXi'); return; }
-    let pin = '';
-    if (!state.cert.trusted) {
-      pin = normalizePin($('confirmedPin').value);
-      if (pin.length !== 64 || pin !== normalizePin(state.cert.sha256)) { toast('Введите полный отпечаток, независимо проверенный на самом сервере'); return; }
+    if (state.connecting || state.busy) return;
+    const address = $('address').value.trim(), user = $('username').value.trim();
+    let password = $('password').value;
+    if (!address || !user || !password) {
+      connectionStatus('Введите IP-адрес ESXi, логин и пароль.', 'error', true);
+      return;
     }
-    const request = { address: state.certAddress, user: $('username').value.trim(), password: $('password').value, pin };
+    const manualPin = normalizePin($('confirmedPin').value);
+    if (manualPin && !/^[A-F0-9]{64}$/.test(manualPin)) {
+      connectionStatus('SHA-256 должен содержать 64 шестнадцатеричных символа, либо оставьте поле пустым.', 'error', true);
+      return;
+    }
+    state.connecting = true; $('connectButton').disabled = true;
+    let request = null, scanStarted = false;
     try {
+      if (typeof window.goCertStart !== 'function' || typeof window.goScanStart !== 'function' || typeof window.goPoll !== 'function' || typeof window.goInvalidate !== 'function') {
+        throw new Error('Модуль подключения недоступен. Перезапустите приложение и попробуйте ещё раз.');
+      }
       resetResults();
-      const promise = job(() => window.goScanStart(request), 'Проверяем ESXi и контроллеры…');
-      $('password').value = '';
-      const host = await promise;
-      if (!host) return;
-      state.host = host; state.bundle = null;
-      renderHost(host); renderPackage(host); populateDatastores(host); await renderReport();
-      $('sshUser').value = $('username').value.trim(); await Promise.all([renderDiagnostics(), loadComponents(), loadHistory()]); navigate('diagnostics');
-    } catch (e) { toast(message(e)); }
-    finally { $('password').value = ''; request.password = ''; }
+      connectionStatus('Подключаемся к ESXi: проверяем адрес и защищённое соединение…');
+      // Clear even a previous connection to the same host before a new attempt.
+      await rpc(() => window.goInvalidate());
+      const cert = await job(() => window.goCertStart(address), 'Подключаемся к ESXi…', 20000, 12000);
+      if (!cert || typeof cert.sha256 !== 'string' || !/^[A-F0-9]{64}$/.test(normalizePin(cert.sha256)) || typeof cert.trusted !== 'boolean' || typeof cert.validTime !== 'boolean') {
+        throw new Error('Не удалось получить данные защищённого соединения. Проверьте адрес ESXi.');
+      }
+      if (address !== $('address').value.trim()) throw new Error('Адрес изменился во время подключения. Попробуйте ещё раз.');
+      const observedPin = normalizePin(cert.sha256);
+      if (manualPin && manualPin !== observedPin) throw new Error('SHA-256 не совпадает с проверенным вами отпечатком. Пароль не отправлен.');
+      const unverified = !cert.trusted && !manualPin;
+      if (unverified || !cert.validTime) {
+        const reason = [unverified ? 'Подлинность сервера не подтверждена. У ESXi часто используется самоподписанный сертификат.' : '',
+          !cert.validTime ? 'Срок действия сертификата истёк или ещё не начался. Проверьте часы компьютера и сервера.' : ''].filter(Boolean).join('\n\n');
+        connectionStatus('Ожидаем вашего решения: продолжить или отменить подключение.', 'warning');
+        const accepted = await confirmUnverified(reason, unverified);
+        if (!accepted) {
+          $('password').value = '';
+          connectionStatus('Подключение отменено. Пароль не отправлен.', 'warning', true);
+          return;
+        }
+      }
+      if (address !== $('address').value.trim()) throw new Error('Адрес изменился во время подключения. Попробуйте ещё раз.');
+      // Observed pins prevent the certificate changing between preflight and
+      // login, but without an independent check they do not authenticate it.
+      const pin = manualPin || ((!cert.trusted || !cert.validTime) ? observedPin : '');
+      request = { address, user, password, pin, allowExpired: !cert.validTime };
+      connectionStatus('Входим в ESXi и читаем данные хоста…');
+      scanStarted = true;
+      const pending = job(() => {
+        // The bridge serializes arguments synchronously before returning.
+        try { return window.goScanStart(request); }
+        finally { $('password').value = ''; request.password = ''; password = ''; }
+      }, 'Входим в ESXi и читаем данные хоста…', 90000, 12000);
+      const host = await pending;
+      if (!host) throw new Error('Подключение не завершено. Попробуйте ещё раз.');
+      if (address !== $('address').value.trim()) throw new Error('Адрес изменился во время подключения. Попробуйте ещё раз.');
+      state.certAddress = address; state.host = host; state.bundle = null;
+      renderHost(host); renderPackage(host); populateDatastores(host);
+      const warning = unverified ? 'Подлинность этого сервера не подтверждена. Используйте только доверенную сеть.' : (!cert.validTime ? 'Подключение выполнено с истёкшим или ещё не действующим сертификатом.' : '');
+      $('connectionWarning').textContent = warning; hide('connectionWarning', !warning);
+      connectionStatus(warning ? 'Подключено. ' + warning : 'Подключено. Данные ESXi получены.', warning ? 'warning' : 'success');
+      $('sshUser').value = user; navigate('diagnostics');
+      // The host result is already visible even if an auxiliary panel fails.
+      try { await rpc(() => Promise.all([renderReport(), renderDiagnostics(), loadComponents(), loadHistory()])); }
+      catch (_) { toast('Подключение выполнено, но не все дополнительные данные удалось загрузить.'); }
+    } catch (e) {
+      if (scanStarted && window.goInvalidate) rpc(() => window.goInvalidate()).catch(() => {});
+      connectionStatus(message(e), 'error', true);
+    } finally {
+      $('password').value = ''; password = ''; if (request) request.password = '';
+      state.connecting = false; $('connectButton').disabled = false;
+    }
   });
   function renderHost(host) {
     hide('diagnosticEmpty', true); hide('diagnosticResult', false);

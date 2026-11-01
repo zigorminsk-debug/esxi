@@ -3,12 +3,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"unicode/utf16"
@@ -144,8 +146,8 @@ func runWindow(a *app.App) error {
 			return err
 		}
 	}
-	// CI can exercise the real WebView2 + native RPC bridge without ESXi.
-	// Only an optional lifecycle trace is written; no network is attempted.
+	// CI exercises the real WebView2 + native RPC bridge and a loopback-only
+	// govmomi simulator. The fixture has fake credentials, not a real ESXi.
 	smoke := os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") == "1"
 	smokeOK := false
 	if smoke {
@@ -156,7 +158,8 @@ func runWindow(a *app.App) error {
 		}); err != nil {
 			return err
 		}
-		w.Init(`window.addEventListener('DOMContentLoaded', async function(){
+		endpointJSON, _ := json.Marshal(os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST_ENDPOINT"))
+		script := `window.addEventListener('DOMContentLoaded', async function(){
 		  let valid = false, stage = 'validation';
 		  try {
 		    let invalidRejected = false, sshRejected = false, monitorRejected = false;
@@ -176,9 +179,43 @@ func runWindow(a *app.App) error {
 		      Array.isArray(history) && !monitor.running && shot && Array.isArray(saved) &&
 		      profiles.some(p => p.address === '192.0.2.111:443' && p.user === 'fixture' && !('password' in p)) &&
 		      !!document.querySelector('#connectionForm') && !!document.querySelector('#raid') && !!document.querySelector('#extensions') && !window.RAID_DEMO;
+		    if (!valid) throw new Error('native bridge validation');
+		    const endpoint = /*__SMOKE_ENDPOINT__*/;
+		    if (!/^127\.0\.0\.1:\d+$/.test(endpoint)) throw new Error('loopback fixture not configured');
+		    const field = (id, value) => { const e = document.getElementById(id); e.value = value; e.dispatchEvent(new Event('input', {bubbles:true})); };
+		    const visible = id => { const e = document.getElementById(id); return e && !e.hidden; };
+		    const wait = async (condition, what) => {
+		      const until = Date.now() + 15000;
+		      while (Date.now() < until) { if (condition()) return; await new Promise(r => setTimeout(r, 50)); }
+		      throw new Error('timeout: ' + what);
+		    };
+		    const connect = () => document.getElementById('connectButton').click();
+		    field('address', endpoint); field('username', 'fixture-user'); field('password', 'fixture-password');
+		    stage = 'click connect and cancel untrusted warning'; connect();
+		    await wait(() => visible('securityDialog'), 'untrusted warning');
+		    if (!document.getElementById('securityDialog').textContent.includes('перехвачен')) throw new Error('warning not shown');
+		    document.getElementById('securityCancel').click();
+		    await wait(() => document.getElementById('connectionStatus').textContent.includes('отменено'), 'cancelled');
+		    if (document.getElementById('password').value) throw new Error('password retained after cancellation');
+		    stage = 'click connect with incorrect credentials'; field('password', 'wrong-fixture-password'); connect();
+		    await wait(() => visible('securityDialog'), 'second warning'); document.getElementById('securityContinue').click();
+		    await wait(() => document.getElementById('connectionStatus').textContent.includes('Вход в ESXi не выполнен'), 'login error');
+		    if (document.getElementById('password').value) throw new Error('password retained after failed login');
+		    stage = 'click connect with valid fixture credentials'; field('password', 'fixture-password'); connect();
+		    await wait(() => visible('securityDialog'), 'third warning'); document.getElementById('securityContinue').click();
+		    await wait(() => visible('diagnosticResult'), 'fixture inventory');
+		    if (!document.getElementById('hostName').textContent || !visible('connectionWarning') || document.getElementById('password').value) throw new Error('inventory or security status missing');
+		    await wait(() => !document.getElementById('connectButton').disabled, 'connection form ready');
+		    stage = 'change host and show network error'; field('address', '127.0.0.1:1');
+		    if (visible('diagnosticResult')) throw new Error('old host still visible');
+		    field('password', 'fixture-password'); connect();
+		    await wait(() => document.getElementById('connectionStatus').textContent.includes('Не удалось подключиться'), 'network error');
+		    if (document.getElementById('password').value || visible('diagnosticResult')) throw new Error('failed connection retained data');
+		    valid = true; stage = 'real WebView2 form + simulator passed';
 		  } catch (e) { valid = false; stage += ': ' + String(e).slice(0, 200); }
 		  await window.goSmokeReady(valid, stage);
-		});`)
+		});`
+		w.Init(strings.Replace(script, "/*__SMOKE_ENDPOINT__*/", string(endpointJSON), 1))
 	}
 	selfTestTrace("bindings registered")
 	w.SetHtml(frontend.HTML(false))

@@ -44,7 +44,7 @@ func PeekCertificate(ctx context.Context, raw string) (Certificate, error) {
 	}}
 	conn, err := d.DialContext(ctx, "tcp", address)
 	if err != nil {
-		return Certificate{}, errors.New("Не удалось получить TLS-сертификат. Проверьте адрес, порт 443 и сетевое соединение")
+		return Certificate{}, errors.New("Не удалось подключиться к ESXi по HTTPS. Проверьте IP-адрес, порт 443 и связь с сервером")
 	}
 	defer conn.Close()
 	state := conn.(*tls.Conn).ConnectionState()
@@ -65,19 +65,30 @@ func PeekCertificate(ctx context.Context, raw string) (Certificate, error) {
 	return out, nil
 }
 
-// TLSConfig validates CA/hostname by default; otherwise an independently
-// verified, exact SHA-256 leaf pin is mandatory. Pinning is checked on every
-// connection, including reconnects; expiry is not bypassed.
+// TLSConfig keeps strict validity checks for callers that do not explicitly
+// allow an expired/not-yet-valid certificate.
 func TLSConfig(pin string) (*tls.Config, error) {
+	return tlsConfig(pin, false)
+}
+
+// With no pin, normal system CA and hostname verification is always used.
+// A pin can be independently verified, or observed during the preflight after
+// the user explicitly accepts the risk. The latter does NOT authenticate the
+// server, but does prevent it changing certificates between the preflight and
+// any credential-bearing connection. A time exception also requires a pin.
+func tlsConfig(pin string, allowExpired bool) (*tls.Config, error) {
 	c := &tls.Config{MinVersion: tls.VersionTLS12}
 	if strings.TrimSpace(pin) == "" {
+		if allowExpired {
+			return nil, errors.New("Исключение по сроку действия требует точного отпечатка сервера")
+		}
 		return c, nil
 	}
 	expected, err := normalizePin(pin)
 	if err != nil {
 		return nil, err
 	}
-	c.InsecureSkipVerify = true // replaced by the exact independently verified pin below
+	c.InsecureSkipVerify = true // replaced by an exact pin below; an observed pin does not establish identity
 	c.VerifyConnection = func(cs tls.ConnectionState) error {
 		if len(cs.PeerCertificates) == 0 {
 			return errors.New("нет сертификата сервера")
@@ -88,7 +99,7 @@ func TLSConfig(pin string) (*tls.Config, error) {
 			return errors.New("отпечаток TLS не совпадает")
 		}
 		now := time.Now()
-		if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+		if !allowExpired && (now.Before(cert.NotBefore) || now.After(cert.NotAfter)) {
 			return errors.New("срок действия сертификата истёк или ещё не начался")
 		}
 		return nil
@@ -103,7 +114,7 @@ func ValidateCredentials(req Request) error {
 	if strings.TrimSpace(req.User) == "" || len(req.User) > 256 || len(req.Password) == 0 || len(req.Password) > 4096 {
 		return errors.New("Введите логин и пароль ESXi")
 	}
-	if _, err := TLSConfig(req.Pin); err != nil {
+	if _, err := tlsConfig(req.Pin, req.AllowExpired); err != nil {
 		return err
 	}
 	return nil

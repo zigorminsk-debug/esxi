@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -187,5 +188,35 @@ func TestSimulatorRejectsWrongPinBeforeAnySOAP(t *testing.T) {
 	defer mu.Unlock()
 	if len(calls) != 0 {
 		t.Fatalf("SOAP requests before certificate validation: %v", calls)
+	}
+}
+
+func TestSimulatorLoginFailureAndUnreachableHost(t *testing.T) {
+	m := simulator.ESX()
+	if err := m.Create(); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Remove()
+	m.Service.TLS = &tls.Config{}
+	// Non-default credentials make the simulator reject incorrect logins.
+	m.Service.Listen = &url.URL{Host: "127.0.0.1:0", User: url.UserPassword("fixture-user", "fixture-password")}
+	s := m.Service.NewServer()
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cert, err := PeekCertificate(ctx, s.URL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.Trusted {
+		t.Fatal("simulator's self-signed certificate should not be system trusted")
+	}
+	_, err = Scan(ctx, Request{Address: s.URL.Host, User: "fixture-user", Password: "wrong-fixture-password", Pin: cert.SHA256})
+	if err == nil || !strings.Contains(err.Error(), "логин, пароль") || strings.Contains(err.Error(), "wrong-fixture-password") {
+		t.Fatalf("login error was unclear or leaked a password: %v", err)
+	}
+	_, err = PeekCertificate(ctx, "127.0.0.1:1")
+	if err == nil || !strings.Contains(err.Error(), "IP-адрес") {
+		t.Fatalf("unreachable host did not return a useful error: %v", err)
 	}
 }

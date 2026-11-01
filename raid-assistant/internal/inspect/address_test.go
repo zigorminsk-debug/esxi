@@ -97,14 +97,14 @@ func TestValidateCredentials(t *testing.T) {
 	if err := ValidateCredentials(valid); err != nil {
 		t.Fatal(err)
 	}
-	for _, req := range []Request{{Address: valid.Address, Password: "x"}, {Address: valid.Address, User: "root"}, {Address: "https://root:bad@host", User: "root", Password: "x"}, {Address: valid.Address, User: "root", Password: "x", Pin: "not a fingerprint"}} {
+	for _, req := range []Request{{Address: valid.Address, Password: "x"}, {Address: valid.Address, User: "root"}, {Address: "https://root:bad@host", User: "root", Password: "x"}, {Address: valid.Address, User: "root", Password: "x", Pin: "not a fingerprint"}, {Address: valid.Address, User: "root", Password: "x", AllowExpired: true}} {
 		if err := ValidateCredentials(req); err == nil {
 			t.Fatalf("invalid credentials accepted: %+v", req)
 		}
 	}
 }
 
-func TestPinnedExpiredCertificateIsRejected(t *testing.T) {
+func TestExpiredCertificateRequiresExplicitExceptionAndMatchingPin(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,8 @@ func TestPinnedExpiredCertificateIsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("expired certificate reached HTTP handler") }))
+	var requests atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(http.StatusNoContent) }))
 	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
 	server.StartTLS()
 	defer server.Close()
@@ -135,7 +136,32 @@ func TestPinnedExpiredCertificateIsRejected(t *testing.T) {
 	if r != nil {
 		r.Body.Close()
 	}
-	if err == nil {
-		t.Fatal("expired pinned certificate accepted")
+	if err == nil || requests.Load() != 0 {
+		t.Fatal("expired pinned certificate accepted without an exception")
+	}
+	if _, err := tlsConfig("", true); err == nil {
+		t.Fatal("expiry exception accepted without a pin")
+	}
+	cfg, err = tlsConfig(strings.Repeat("0", 64), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Transport = &http.Transport{TLSClientConfig: cfg}
+	if r, err := client.Get(server.URL); err == nil {
+		r.Body.Close()
+		t.Fatal("expiry exception accepted the wrong certificate")
+	}
+	cfg, err = tlsConfig(cert.SHA256, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Transport = &http.Transport{TLSClientConfig: cfg}
+	r, err = client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if requests.Load() != 1 {
+		t.Fatalf("unexpected HTTP requests: %d", requests.Load())
 	}
 }

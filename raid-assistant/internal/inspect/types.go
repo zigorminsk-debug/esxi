@@ -17,10 +17,11 @@ type Certificate struct {
 }
 
 type Request struct {
-	Address  string `json:"address"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	Pin      string `json:"pin"`
+	Address      string `json:"address"`
+	User         string `json:"user"`
+	Password     string `json:"password"`
+	Pin          string `json:"pin"`
+	AllowExpired bool   `json:"allowExpired"` // only after explicit user confirmation, with an exact pin
 }
 
 type Controller struct {
