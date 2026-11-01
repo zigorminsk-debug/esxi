@@ -12,50 +12,36 @@ permissions:
 jobs:
   vendor-page-probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: Inspect public Broadcom download-page structure
-        shell: bash
-        run: |
-          curl -fsSL --max-time 30 -D /tmp/headers -o /tmp/vendor-page https://docs.broadcom.com/docs/1232745889
-          cat /tmp/headers
-          python3 - <<'PY'
-          from html.parser import HTMLParser
-          class Probe(HTMLParser):
-              def handle_starttag(self, tag, attrs):
-                  a = dict(attrs)
-                  if tag in ('script', 'a', 'form', 'input', 'button'):
-                      v = ' '.join('%s=%s' % (k, str(val)[:300]) for k,val in attrs if k in ('id','src','href','action','method','name','type','onclick','value','class'))
-                      if v: print(tag, v)
-              def handle_data(self, data):
-                  if any(s in data.lower() for s in ('download', '1232745889', 'i agree')):
-                      print('DATA', data.strip()[:2000])
-          Probe().feed(open('/tmp/vendor-page', encoding='utf8', errors='replace').read())
-          PY
-      - name: Make public HTML available for review
+      - name: Inspect official LSA archive for its safe download implementation
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           exec > /tmp/raid-probe-step.log 2>&1
-          trap 'python3 -c "import json,base64; print(json.dumps({\"content\":base64.b64encode(open(\"/tmp/raid-probe-step.log\",\"rb\").read()[-12000:]).decode(),\"encoding\":\"base64\"}))" > /tmp/raid-probe-error.json; ERRBLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" --input /tmp/raid-probe-error.json --jq .sha); gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=error -f context=vendor-page-error -f description="$ERRBLOB"' ERR
-          npm install --no-save --no-package-lock playwright-core
-          cat > /tmp/probe-page.cjs <<'JS'
-          const { chromium } = require(process.cwd() + '/node_modules/playwright-core');
-          (async () => {
-            const browser = await chromium.launch({ channel: 'chrome', args: ['--no-sandbox'] });
-            const page = await browser.newPage();
-            const responses = [];
-            page.on('response', r => {
-              const url = r.url();
-              if (url.includes('/api/')) responses.push({ url, status: r.status() });
-            });
-            await page.goto('https://docs.broadcom.com/docs/1232745889', { waitUntil: 'networkidle', timeout: 60000 });
-            const links = await page.locator('a').evaluateAll(as => as.map(a => ({ text: a.textContent.trim(), href: a.href })).filter(a => a.text || a.href));
-            console.log(JSON.stringify({ links, responses }));
-            await browser.close();
-          })().catch(e => { console.error(e); process.exit(1); });
-          JS
-          node /tmp/probe-page.cjs > /tmp/vendor-results.json 2> /tmp/vendor-error || cp /tmp/vendor-error /tmp/vendor-results.json
-          BLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" -f content="$(base64 -w0 /tmp/vendor-results.json)" -f encoding=base64 --jq .sha)
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context=vendor-page-review -f description="$BLOB"
+          trap 'python3 -c "import json,base64; print(json.dumps({\"content\":base64.b64encode(open(\"/tmp/raid-probe-step.log\",\"rb\").read()[-12000:]).decode(),\"encoding\":\"base64\"}))" > /tmp/raid-probe-error.json; ERRBLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" --input /tmp/raid-probe-error.json --jq .sha); gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=error -f context=vendor-archive-error -f description="$ERRBLOB"' ERR
+          curl -fsSL --max-time 120 -D /tmp/vendor-headers -o /tmp/vendor.zip 'https://docs.broadcom.com/docs-and-downloads/008.018.012.000_MR_7.38_LSA_ESXi.zip'
+          python3 - <<'PY'
+          import zipfile, hashlib, json, io
+          p = '/tmp/vendor.zip'
+          with open(p, 'rb') as f:
+              raw = f.read()
+          result = {'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(), 'headers': open('/tmp/vendor-headers').read(), 'entries': []}
+          def walk(z, depth=0):
+              for i in z.infolist():
+                  result['entries'].append({'name': i.filename, 'size': i.file_size})
+                  if i.filename.lower().endswith('.vib') and i.file_size < 100_000_000:
+                      data = z.read(i)
+                      result['entries'][-1].update({'sha256': hashlib.sha256(data).hexdigest(), 'magic': data[:12].hex()})
+                  if depth < 2 and i.filename.lower().endswith('.zip') and i.file_size < 100_000_000:
+                      try:
+                          walk(zipfile.ZipFile(io.BytesIO(z.read(i))), depth+1)
+                      except zipfile.BadZipFile:
+                          pass
+          walk(zipfile.ZipFile(io.BytesIO(raw)))
+          open('/tmp/vendor-results.json','w').write(json.dumps(result, indent=2))
+          PY
+          python3 -c "import json,base64; print(json.dumps({'content':base64.b64encode(open('/tmp/vendor-results.json','rb').read()).decode(),'encoding':'base64'}))" > /tmp/vendor-blob.json
+          BLOB=$(gh api "repos/$GITHUB_REPOSITORY/git/blobs" --input /tmp/vendor-blob.json --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context=vendor-archive-review -f description="$BLOB"
