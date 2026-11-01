@@ -1,7 +1,7 @@
 name: RAID Assistant build
 on:
   push:
-    branches: ['arena/**']
+    branches: ['main', 'arena/**']
     paths: ['raid-assistant/**', '.github/workflows/raid-assistant.yml']
   pull_request:
     paths: ['raid-assistant/**', '.github/workflows/raid-assistant.yml']
@@ -98,39 +98,3 @@ jobs:
           path: raid-build/*
           if-no-files-found: error
           retention-days: 30
-
-  publish-preview:
-    # Explicit opt-in for this one preliminary release, never on ordinary
-    # pushes or PRs. All three jobs, including native Windows/RPC, must pass.
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-raid-0.1.0]')
-    needs: [go-tests, browser-tests, windows-build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: raid-assistant-windows-x64
-          path: raid-build
-      - name: Verify checksum and publish the separate preview release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TARGET: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          (cd raid-build && sha256sum -c SHA256SUMS.txt)
-          tag=raid-assistant-v0.1.0
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "::error::Release $tag already exists; not overwriting it."
-            exit 1
-          fi
-          gh release create "$tag" \
-            --target "$RELEASE_TARGET" \
-            --title "ESXi RAID Assistant 0.1.0 (предварительная версия)" \
-            --notes-file raid-assistant/RELEASE-NOTES.md \
-            --prerelease --latest=false \
-            raid-build/ESXi-RAID-Assistant-0.1.0-windows-x64.exe raid-build/SHA256SUMS.txt \
-            raid-build/README-RAID-Assistant.md raid-build/ESXI-8-EXTENSIONS.md \
-            raid-build/windows-certificate.sha256
