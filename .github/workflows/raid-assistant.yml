@@ -1,0 +1,33 @@
+name: RAID Assistant build
+on:
+  push:
+    branches: ['arena/**']
+    paths: ['raid-assistant/**', '.github/workflows/raid-assistant.yml']
+  pull_request:
+    paths: ['raid-assistant/**', '.github/workflows/raid-assistant.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vendor-page-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public Broadcom download-page structure
+        shell: bash
+        run: |
+          curl -fsSL --max-time 30 -D /tmp/headers -o /tmp/vendor-page https://docs.broadcom.com/docs/1232745889
+          cat /tmp/headers
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          class Probe(HTMLParser):
+              def handle_starttag(self, tag, attrs):
+                  a = dict(attrs)
+                  if tag in ('script', 'a', 'form', 'input', 'button'):
+                      v = ' '.join('%s=%s' % (k, str(val)[:300]) for k,val in attrs if k in ('id','src','href','action','method','name','type','onclick','value','class'))
+                      if v: print(tag, v)
+              def handle_data(self, data):
+                  if any(s in data.lower() for s in ('download', '1232745889', 'i agree')):
+                      print('DATA', data.strip()[:2000])
+          Probe().feed(open('/tmp/vendor-page', encoding='utf8', errors='replace').read())
+          PY
