@@ -4,10 +4,12 @@ package main
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
@@ -49,6 +51,20 @@ func runWindow(a *app.App) error {
 	}
 	defer w.Destroy()
 	w.SetSize(760, 600, webview2.HintMin)
+	// Optional notifications are only enabled by the user when monitoring.
+	// A single non-blocking native dialog is shown for a new warning state.
+	var alertOpen atomic.Bool
+	a.SetNotifier(func(title, text string) {
+		if !alertOpen.CompareAndSwap(false, true) {
+			return
+		}
+		go func() {
+			defer alertOpen.Store(false)
+			t, _ := syscall.UTF16PtrFromString(text)
+			c, _ := syscall.UTF16PtrFromString(title)
+			messageBox.Call(0, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), 0x30|0x10000|0x40000)
+		}()
+	})
 	bindings := map[string]any{
 		"goCertStart":     a.StartCertificate,
 		"goScanStart":     a.StartScan,
@@ -80,7 +96,47 @@ func runWindow(a *app.App) error {
 			}
 			return exec.Command("explorer.exe", p).Start()
 		},
-		"goClipboard": copyToClipboard,
+		"goClipboard":       copyToClipboard,
+		"goInvalidate":      a.Invalidate,
+		"goProfiles":        a.Profiles,
+		"goProfileSave":     a.SaveProfile,
+		"goProfileDelete":   a.DeleteProfile,
+		"goComponents":      a.Components,
+		"goDiagnostics":     a.Diagnostics,
+		"goPortStart":       a.StartPortProbe,
+		"goSSHKeyStart":     a.StartSSHKey,
+		"goSSHReadStart":    a.StartSSHRead,
+		"goCorrelate":       a.Correlate,
+		"goMonitorStart":    a.StartMonitor,
+		"goMonitor":         a.Monitor,
+		"goMonitorStop":     a.StopMonitor,
+		"goHistory":         a.History,
+		"goHistoryClear":    a.ClearHistory,
+		"goUpdateStart":     a.StartUpdate,
+		"goScreenshotLoad":  a.LoadScreenshot,
+		"goScreenshotClear": a.ClearScreenshot,
+		"goScreenshotImport": func() (any, error) {
+			file, err := chooseDataFile(uintptr(w.Window()), "image")
+			if err != nil || file == "" {
+				return nil, err
+			}
+			return a.ImportScreenshot(file)
+		},
+		"goRaidImportStart": func() (string, error) {
+			file, err := chooseDataFile(uintptr(w.Window()), "report")
+			if err != nil || file == "" {
+				return "", err
+			}
+			return a.StartRaidImport(file)
+		},
+		"goShareTelegram": func(text string) error {
+			if len(text) == 0 || len(text) > 6000 {
+				return errors.New("Текст слишком большой для передачи")
+			}
+			// An explicitly clicked action and confirmation are required in the UI.
+			target := "https://t.me/share/url?url=" + url.QueryEscape("https://github.com/zigorminsk-debug/esxi") + "&text=" + url.QueryEscape(text)
+			return openWindows(target)
+		},
 	}
 	for name, fn := range bindings {
 		if err := w.Bind(name, fn); err != nil {
@@ -100,9 +156,23 @@ func runWindow(a *app.App) error {
 			return err
 		}
 		w.Init(`window.addEventListener('DOMContentLoaded', async function(){
-		  let invalidRejected = false;
-		  try { await window.goCertStart('https://u:p@invalid.example'); } catch (_) { invalidRejected = true; }
-		  await window.goSmokeReady(invalidRejected && !!document.querySelector('#connectionForm') && !!document.querySelector('#extensions') && !window.RAID_DEMO);
+		  let valid = false;
+		  try {
+		    let invalidRejected = false, sshRejected = false, monitorRejected = false;
+		    try { await window.goCertStart('https://u:p@invalid.example'); } catch (_) { invalidRejected = true; }
+		    try { await window.goSSHReadStart({user:'test',password:'not-a-credential',kind:'storcli',consent:true}); } catch (_) { sshRejected = true; }
+		    try { await window.goMonitorStart({mode:'ssh',interval:60}); } catch (_) { monitorRejected = true; }
+		    const catalog = await window.goComponents(), history = await window.goHistory();
+		    const monitor = await window.goMonitor(), shot = await window.goScreenshotLoad();
+		    const saved = await window.goProfileSave({name:'CI smoke',address:'192.0.2.111',user:'fixture'});
+		    const profiles = await window.goProfiles();
+		    await window.goProfileDelete('192.0.2.111');
+		    valid = invalidRejected && sshRejected && monitorRejected && Array.isArray(catalog) && catalog.length >= 20 &&
+		      Array.isArray(history) && !monitor.running && shot && Array.isArray(saved) &&
+		      profiles.some(p => p.address === '192.0.2.111:443' && p.user === 'fixture' && !('password' in p)) &&
+		      !!document.querySelector('#connectionForm') && !!document.querySelector('#raid') && !!document.querySelector('#extensions') && !window.RAID_DEMO;
+		  } catch (_) { valid = false; }
+		  await window.goSmokeReady(valid);
 		});`)
 	}
 	selfTestTrace("bindings registered")
@@ -151,10 +221,21 @@ type openFileName struct {
 	FlagsEx         uint32
 }
 
-func chooseFile(owner uintptr) (string, error) {
+func chooseFile(owner uintptr) (string, error) { return chooseDataFile(owner, "package") }
+func chooseDataFile(owner uintptr, kind string) (string, error) {
 	buffer := make([]uint16, 32768)
-	filter := utf16.Encode([]rune("ZIP или VIB (*.zip;*.vib)\x00*.zip;*.vib\x00Все файлы\x00*.*\x00\x00"))
-	title, _ := syscall.UTF16PtrFromString("Выберите скачанный пакет LSA для ESXi 8")
+	filterText, titleText := "ZIP или VIB (*.zip;*.vib)\x00*.zip;*.vib\x00Все файлы\x00*.*\x00\x00", "Выберите скачанный пакет LSA для ESXi 8"
+	switch kind {
+	case "report":
+		filterText, titleText = "Отчёты JSON и текст (*.json;*.txt)\x00*.json;*.txt\x00Все файлы\x00*.*\x00\x00", "Выберите отчёт StorCLI или HPE SSACLI"
+	case "image":
+		filterText, titleText = "Изображения PNG и JPEG (*.png;*.jpg;*.jpeg)\x00*.png;*.jpg;*.jpeg\x00\x00", "Выберите свой скриншот Host Client"
+	case "package":
+	default:
+		return "", errors.New("Неизвестный тип файла")
+	}
+	filter := utf16.Encode([]rune(filterText))
+	title, _ := syscall.UTF16PtrFromString(titleText)
 	d := openFileName{StructSize: uint32(unsafe.Sizeof(openFileName{})), Owner: owner, Filter: &filter[0], FilterIndex: 1, File: &buffer[0], MaxFile: uint32(len(buffer)), Title: title, Flags: 0x00080000 | 0x00001000 | 0x00000800 | 0x00000008 | 0x00000004}
 	ret, _, _ := getOpenFileName.Call(uintptr(unsafe.Pointer(&d)))
 	runtime.KeepAlive(filter)

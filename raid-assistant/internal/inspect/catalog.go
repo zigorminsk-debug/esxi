@@ -24,6 +24,7 @@ const officialReadme = "https://docs.broadcom.com/docs/1232745888"
 const officialGuide = "https://techdocs.broadcom.com/us/en/storage-and-ethernet-connectivity/enterprise-storage-solutions/lsa-lsi-storage-authority-software/2-18/Managing-Light-Weight-Agent/Installing-LWA-on-VMware-ESXi/Installing-LWA-on-VMware-ESXi8x.html"
 
 func CatalogMatch(c *Controller) {
+	c.OEM, c.OEMReason = classifyOEM(*c)
 	key := strings.ToLower(strings.Join([]string{c.Vendor, c.DeviceID, c.SubVendor, c.SubDevice}, ":"))
 	if item, ok := retailControllers[key]; ok {
 		c.Match = "catalog"
@@ -31,11 +32,41 @@ func CatalogMatch(c *Controller) {
 		c.ProductURL = "https://www.broadcom.com/products/storage/raid-controllers/" + item.slug
 		return
 	}
+	if c.OEM != "" {
+		c.Match = "oem"
+		return
+	}
 	if c.SubVendor != "" && c.SubVendor != "0000" && c.SubVendor != "ffff" && c.SubVendor != "1000" && (c.Vendor == "1000" || strings.Contains(strings.ToLower(c.Model), "perc")) {
 		c.Match = "oem"
 		return
 	}
 	c.Match = "unknown"
+}
+
+// OEM hints use the model/driver or PCI subsystem. They are not a hardware
+// compatibility verdict or proof that a vendor web UI/port exists.
+func classifyOEM(c Controller) (string, string) {
+	m := strings.ToLower(c.Model + " " + c.Driver)
+	switch {
+	case strings.Contains(m, "perc"):
+		return "Dell PERC", "Модель содержит PERC; сверьте конкретную плату и firmware у Dell."
+	case strings.Contains(m, "smart array") || strings.Contains(m, "hpsa"):
+		return "HPE Smart Array", "Модель или драйвер похожи на HPE Smart Array; проверьте точную модель у HPE."
+	case strings.Contains(m, "serveraid") || strings.Contains(m, "thinksystem raid"):
+		return "Lenovo RAID", "Модель похожа на Lenovo ServeRAID/ThinkSystem; проверьте её у Lenovo."
+	}
+	// Subsystem IDs identify OEM ownership, not the RAID product by themselves.
+	switch strings.ToLower(c.SubVendor) {
+	case "1028":
+		return "Dell OEM", "Subsystem ID Dell; название PERC и совместимость не подтверждены."
+	case "103c":
+		return "HPE OEM", "Subsystem ID HP/HPE; Smart Array и совместимость не подтверждены."
+	case "17aa":
+		return "Lenovo OEM", "Subsystem ID Lenovo; семейство контроллера и совместимость не подтверждены."
+	case "1014":
+		return "IBM / Lenovo OEM", "Subsystem ID IBM; Lenovo и модель RAID требуют проверки."
+	}
+	return "", ""
 }
 
 func supportedVersion(version string) bool {

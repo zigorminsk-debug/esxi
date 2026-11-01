@@ -136,7 +136,7 @@ func Build(h *inspect.Host, b *bundle.Result, datastore, accessIP string) Report
 		"esxcli software vib install -v "+q,
 		"esxcli software vib list | grep -i lwmd",
 		"esxcli software vib signature verify")
-	add("Проверьте и запустите службу", "После требуемой перезагрузки проверьте установленный VIB, его подпись и статус lwmd. Команду start выполняет администратор только если служба остановлена; при ошибке изучите логи и документацию производителя.", false,
+	add("Проверьте и запустите службу", "После требуемой перезагрузки проверьте установленный VIB, его подпись и состояние lwmd. В некоторых сборках ESXi 8 команда info get может не показать статус: отсутствие вывода не доказывает остановку; дополнительно проверьте список служб Host Client и журнал. Команду start выполняет администратор только если служба остановлена; при ошибке изучите документацию производителя.", false,
 		"esxcli daemon info get -s lwmd", "esxcli daemon control start -s lwmd", "esxcli daemon info get -s lwmd")
 	ip, _ := NormalizeAccessIP(accessIP)
 	fwCommands := []string{"esxcli network firewall ruleset list | grep -i lwmd", "esxcli network firewall ruleset rule list -r lwmd", "esxcli network firewall ruleset allowedip list -r lwmd"}

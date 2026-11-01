@@ -13,7 +13,7 @@ import (
 
 func newTestApp(t *testing.T) *App {
 	t.Helper()
-	return &App{jobs: make(map[string]Job), outputDir: t.TempDir()}
+	return &App{jobs: make(map[string]Job), outputDir: t.TempDir(), extra: newExtras(t.TempDir())}
 }
 func waitForJob(t *testing.T, a *App, id string) Job {
 	t.Helper()

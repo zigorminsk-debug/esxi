@@ -32,6 +32,7 @@ type App struct {
 	bundle    *bundle.Result
 	epoch     uint64
 	outputDir string
+	extra     *extras
 }
 
 func New() (*App, error) {
@@ -44,7 +45,11 @@ func New() (*App, error) {
 		return nil, errors.New("Не удалось создать безопасный идентификатор сессии")
 	}
 	dir := filepath.Join(home, "Downloads", "ESXi-RAID-Assistant", time.Now().Format("2006-01-02_150405")+"-"+hex.EncodeToString(rnd))
-	return &App{jobs: make(map[string]Job), outputDir: dir}, nil
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = filepath.Join(home, ".config")
+	}
+	return &App{jobs: make(map[string]Job), outputDir: dir, extra: newExtras(filepath.Join(configDir, "ESXi-RAID-Assistant"))}, nil
 }
 
 func (a *App) start(fn func() (any, error)) (string, error) {
@@ -99,14 +104,18 @@ func (a *App) StartCertificate(address string) (string, error) {
 }
 
 func (a *App) StartScan(req inspect.Request) (string, error) {
-	if err := inspect.ValidateCredentials(req); err != nil {
-		return "", err
-	}
+	// A new attempt invalidates the old host even when validation fails;
+	// otherwise an invisible previous monitor could keep reading the old host.
 	a.mu.Lock()
+	a.stopMonitorLocked()
 	a.epoch++
 	epoch := a.epoch
 	a.host, a.bundle = nil, nil
+	a.extra.snapshot, a.extra.port, a.extra.key = nil, nil, nil
 	a.mu.Unlock()
+	if err := inspect.ValidateCredentials(req); err != nil {
+		return "", err
+	}
 	return a.start(func() (any, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 		defer cancel()
@@ -122,6 +131,7 @@ func (a *App) StartScan(req inspect.Request) (string, error) {
 			return nil, errors.New("Результат устарел: выполнена новая проверка хоста")
 		}
 		a.host = host
+		a.record("ESXi API", host.DisplayHost, "info", "Прочитаны параметры хоста; часть данных может быть недоступна.")
 		return host, nil
 	})
 }
@@ -224,7 +234,19 @@ func (a *App) SaveReport(opts ReportOptions) (string, error) {
 func (a *App) Link(kind string) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if strings.HasPrefix(kind, "component:") {
+		if link := componentLink(strings.TrimPrefix(kind, "component:")); link != "" {
+			return link, nil
+		}
+		return "", errors.New("Неизвестный компонент")
+	}
 	switch kind {
+	case "raid-releases":
+		return "https://github.com/zigorminsk-debug/esxi/releases", nil
+	case "screenshot-source":
+		return "https://support.us.ovhcloud.com/hc/en-us/articles/360003263859-How-to-create-a-VM-in-VMware-ESXi", nil
+	case "screenshot-firewall":
+		return "https://support.us.ovhcloud.com/hc/en-us/articles/47239835019923-Manage-and-secure-your-ESXi-dedicated-server-from-the-outset", nil
 	case "guide":
 		return inspect.OfficialGuide(), nil
 	case "broadcom":

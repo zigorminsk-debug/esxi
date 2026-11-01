@@ -102,7 +102,77 @@ test('additional ESXi packages are clearly informational and link to fixed vendo
   assert.match(await section.innerText(),/SSACLI/);
   assert.match(await section.innerText(),/iDRAC/);
   assert.match(await section.innerText(),/vGPU/);
-  await section.locator('[data-link="ext-hpe"]').click();
-  assert.equal(await p.evaluate(()=>window.openedKind),'ext-hpe');
+  await section.locator('.extension-card').filter({hasText:'HPE SSACLI'}).getByRole('button',{name:/Официальный источник/}).click();
+  assert.equal(await p.evaluate(()=>window.openedKind),'component:ssacli');
+ }finally{await p.close()}
+});
+
+
+test('RAID snapshot import requires host confirmation before exact-NAA relations',async()=>{
+ const p=await pageFor();try{
+  const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await scan(p);
+  await p.click('#raidImport');await p.locator('#raidResult').waitFor({state:'visible'});
+  assert.match(await p.locator('#raidResult').innerText(),/Вымышленные данные/);
+  assert.match(await p.locator('#raidTables').innerText(),/Failed/);
+  await p.click('#correlate');assert.match(await p.locator('#toast').innerText(),/Подтвердите/);
+  await p.check('#reportHostConfirmed');await p.click('#correlate');
+  assert.match(await p.locator('#relationsResult').innerText(),/datastore1/);
+  assert.match(await p.locator('#relationsResult').innerText(),/DEMO-VM/);
+  assert.equal(errors.length,0,errors.join('\n'));
+ }finally{await p.close()}
+});
+
+test('SSH requires matching host key and explicit consent; monitor keeps no password in page',async()=>{
+ const p=await pageFor();try{
+  const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await scan(p);
+  await p.locator('#sshDetails summary').click();await p.click('#sshKeyButton');await p.locator('#sshKeyPanel').waitFor({state:'visible'});
+  await p.fill('#sshUser','root');await p.fill('#sshPassword','ssh-secret-test');await p.fill('#sshPin','SHA256:wrong');await p.check('#sshConsent');await p.click('#sshRead');
+  assert.match(await p.locator('#toast').innerText(),/проверенный независимо/);
+  await p.fill('#sshPin','SHA256:DEMO_ONLY_NOT_A_REAL_HOST_KEY');await p.fill('#sshPassword','ssh-secret-test');await p.click('#sshRead');
+  await p.locator('#raidResult').waitFor({state:'visible'});assert.equal(await p.locator('#sshPassword').inputValue(),'');
+  await p.fill('#sshPassword','ssh-secret-test');await p.selectOption('#monitorMode','ssh');await p.fill('#monitorInterval','60');await p.click('#monitorStart');
+  assert.equal(await p.locator('#sshPassword').inputValue(),'');assert.equal(await p.locator('#monitorStop').isEnabled(),true);
+  assert.match(await p.locator('#monitorStatus').innerText(),/ДЕМО/);assert.match(await p.locator('#historyList').innerText(),/Мониторинг/);
+  assert.equal(await p.evaluate(()=>JSON.stringify(localStorage).includes('ssh-secret-test')),false);
+  await p.click('#monitorStop');assert.match(await p.locator('#monitorStatus').innerText(),/остановлен/);assert.equal(errors.length,0,errors.join('\n'));
+ }finally{await p.close()}
+});
+
+test('saved profiles do not persist passwords; catalog, wizard, and screenshots are usable',async()=>{
+ const p=await pageFor();try{
+  const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(base);
+  await p.evaluate(()=>localStorage.removeItem('raid-demo-hosts'));await p.fill('#address','192.0.2.42');await p.fill('#username','operator');await p.fill('#password','do-not-store-me');await p.fill('#profileName','Lab42');await p.click('#saveProfile');
+  assert.match(await p.locator('#hostProfiles').innerText(),/Lab42/);assert.equal(await p.evaluate(()=>localStorage.getItem('raid-demo-hosts').includes('do-not-store-me')),false);
+  await p.reload();await p.selectOption('#hostProfiles','192.0.2.42');assert.equal(await p.locator('#username').inputValue(),'operator');assert.equal(await p.locator('#password').inputValue(),'');
+  await p.fill('#password','another-not-real');await p.click('#certButton');await p.locator('#certPanel').waitFor({state:'visible'});await p.click('#scanButton');await p.locator('#diagnosticWizard').waitFor({state:'visible'});
+  assert.match(await p.locator('#diagnosticSteps').innerText(),/Факт:/);await p.click('#probePort');
+  await p.locator('#componentSearch').fill('NSX');assert.match(await p.locator('#componentGrid').innerText(),/NSX host modules/);assert.equal(await p.locator('#componentGrid .extension-card').count(),1);
+  await p.locator('#componentSearch').fill('');await p.selectOption('#componentFilter','found');assert.match(await p.locator('#componentGrid').innerText(),/tools-light/);
+  assert.ok(await p.locator('#datastoreShot').evaluate(img=>img.naturalWidth)>0);assert.ok(await p.locator('.screenshot-grid img').nth(1).evaluate(img=>img.naturalWidth)>0);
+  assert.equal(errors.length,0,errors.join('\n'));
+ }finally{await p.close()}
+});
+
+test('changing host stops monitoring and removes old RAID and catalog results',async()=>{
+ const p=await pageFor();try{
+  const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await scan(p);
+  await p.locator('#sshDetails summary').click();await p.click('#sshKeyButton');await p.locator('#sshKeyPanel').waitFor({state:'visible'});
+  await p.fill('#sshUser','root');await p.fill('#sshPassword','temporary-secret');await p.fill('#sshPin','SHA256:DEMO_ONLY_NOT_A_REAL_HOST_KEY');await p.check('#sshConsent');
+  await p.selectOption('#monitorMode','ssh');await p.click('#monitorStart');await p.locator('#raidResult').waitFor({state:'visible'});
+  await p.selectOption('#componentFilter','found');assert.ok(await p.locator('#componentGrid .extension-card').count()>0);
+  await p.fill('#address','192.0.2.99');
+  await p.waitForFunction(()=>document.querySelector('#raidResult').hidden && document.querySelector('#monitorStatus').textContent.includes('остановлен') && document.querySelector('#componentGrid').children.length===0);
+  await p.waitForTimeout(3200);assert.equal(await p.locator('#raidResult').isHidden(),true);
+  assert.equal(errors.length,0,errors.join('\n'));
+ }finally{await p.close()}
+});
+
+test('Windows minimum size at enlarged type has no page-level horizontal overflow',async()=>{
+ const p=await pageFor({width:760,height:600});try{
+  await p.goto(base);await p.evaluate(()=>localStorage.removeItem('raid-assistant-font'));await p.reload();
+  for(let i=0;i<7;i++)await p.click('#fontPlus');
+  await scan(p);await p.click('#raidImport');await p.locator('#raidResult').waitFor({state:'visible'});
+  const measure=await p.evaluate(()=>({w:document.documentElement.scrollWidth,inner:innerWidth,scale:getComputedStyle(document.documentElement).getPropertyValue('--scale')}));
+  assert.ok(measure.w<=measure.inner+2,JSON.stringify(measure));assert.equal(measure.scale.trim(),'1.7');
  }finally{await p.close()}
 });

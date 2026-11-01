@@ -33,7 +33,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := runWindow(a); err != nil {
+	err = runWindow(a)
+	a.Close() // stop monitoring and release any in-memory SSH credentials
+	if err != nil {
 		log.Fatal(err)
 	}
 }

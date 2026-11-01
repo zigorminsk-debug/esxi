@@ -106,13 +106,51 @@ func scanWithClient(ctx context.Context, req Request, hostname, address string, 
 	}
 	if len(mh.Datastore) > 0 {
 		var stores []mo.Datastore
-		if err := property.DefaultCollector(vc).Retrieve(ctx, mh.Datastore, []string{"summary"}, &stores); err == nil {
+		if err := property.DefaultCollector(vc).Retrieve(ctx, mh.Datastore, []string{"summary", "info", "vm"}, &stores); err == nil {
+			// Datastore -> VM is an inventory association, not a promise that
+			// every VM disk resides on this datastore or a complete backup map.
+			refs := map[types.ManagedObjectReference]bool{}
 			for _, ds := range stores {
-				h.Datastores = append(h.Datastores, Datastore{Name: ds.Summary.Name, Type: ds.Summary.Type, Accessible: ds.Summary.Accessible, Free: ds.Summary.FreeSpace})
+				for _, ref := range ds.Vm {
+					refs[ref] = true
+				}
+			}
+			names := map[types.ManagedObjectReference]string{}
+			if len(refs) > 0 {
+				list := make([]types.ManagedObjectReference, 0, len(refs))
+				for ref := range refs {
+					list = append(list, ref)
+				}
+				var vms []mo.VirtualMachine
+				if err := property.DefaultCollector(vc).Retrieve(ctx, list, []string{"name"}, &vms); err != nil {
+					h.Warnings = append(h.Warnings, "Имена ВМ не прочитаны: проверьте права на инвентарь.")
+				} else {
+					for _, vm := range vms {
+						names[vm.Reference()] = vm.Name
+					}
+				}
+			}
+			for _, ds := range stores {
+				d := Datastore{Name: ds.Summary.Name, Type: ds.Summary.Type, Accessible: ds.Summary.Accessible, Free: ds.Summary.FreeSpace}
+				if info, ok := ds.Info.(*types.VmfsDatastoreInfo); ok && info.Vmfs != nil {
+					for _, extent := range info.Vmfs.Extent {
+						if extent.DiskName != "" {
+							d.Extents = append(d.Extents, extent.DiskName)
+						}
+					}
+				}
+				for _, ref := range ds.Vm {
+					if name := names[ref]; name != "" {
+						d.VMs = append(d.VMs, name)
+					}
+				}
+				sort.Strings(d.Extents)
+				sort.Strings(d.VMs)
+				h.Datastores = append(h.Datastores, d)
 			}
 			sort.Slice(h.Datastores, func(i, j int) bool { return h.Datastores[i].Name < h.Datastores[j].Name })
 		} else {
-			h.Warnings = append(h.Warnings, "Хранилища не удалось прочитать: проверьте права доступа к datastore.")
+			h.Warnings = append(h.Warnings, "Хранилища и их связи не удалось прочитать: проверьте права доступа к datastore.")
 		}
 	}
 	collectChecks(ctx, vc, mh, h, hostname)
@@ -214,6 +252,7 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 			}
 			if strings.EqualFold(s.Key, "lwmd") {
 				lwaFound = true
+				h.LWAServiceKnown, h.LWAServiceRunning = true, s.Running
 				value := "Остановлена"
 				if s.Running {
 					value = "Работает"
@@ -285,17 +324,23 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 			if name == "" {
 				name = row.Value("name")
 			}
+			version := row.Value("Version")
+			if version == "" {
+				version = row.Value("version")
+			}
+			vendor := row.Value("Vendor")
+			if vendor == "" {
+				vendor = row.Value("vendor")
+			}
 			if name != "" {
 				parsedNames++
+				h.VIBs = append(h.VIBs, VIB{Name: name, Version: version, Vendor: vendor})
 			}
 			if strings.Contains(strings.ToLower(name), "lwmd") {
-				version := row.Value("Version")
-				if version == "" {
-					version = row.Value("version")
-				}
 				matches = append(matches, strings.TrimSpace(name+" "+version))
 			}
 		}
+		h.VIBInventoryKnown = parsedNames > 0
 		if len(matches) > 0 {
 			h.LWAVersion = strings.Join(matches, ", ")
 			check("Установленный LWA", h.LWAVersion, "info", "Не обновляйте существующую установку без проверки совместимости и плана отката.")

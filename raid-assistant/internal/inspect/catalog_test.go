@@ -62,3 +62,16 @@ func TestCandidateReasonsAreSpecific(t *testing.T) {
 		t.Fatalf("OEM reason missing: %s", r)
 	}
 }
+
+func TestSharedSmartPQIDriverDoesNotClaimHPE(t *testing.T) {
+	c := Controller{Model: "Microchip RAID", Driver: "smartpqi", SubVendor: "9005"}
+	CatalogMatch(&c)
+	if c.OEM != "" || c.Match == "oem" {
+		t.Fatalf("shared driver misclassified: %+v", c)
+	}
+	c = Controller{Model: "Smart Array P408", Driver: "smartpqi"}
+	CatalogMatch(&c)
+	if c.OEM != "HPE Smart Array" {
+		t.Fatalf("model-based classification lost: %+v", c)
+	}
+}

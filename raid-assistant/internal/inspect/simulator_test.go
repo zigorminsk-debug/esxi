@@ -35,6 +35,17 @@ func TestReadOnlySimulator(t *testing.T) {
 	hs.Config.Product.Build = "24022510"
 	hs.Hardware.PciDevice = append(hs.Hardware.PciDevice, types.HostPciDevice{Id: "0000:18:00.0", ClassId: 0x0104, VendorId: 0x1000, DeviceId: 0x10e2, SubVendorId: 0x1000, SubDeviceId: 0x4010, DeviceName: "MegaRAID 9560-8i"})
 	hs.Config.StorageDevice.HostBusAdapter = append(hs.Config.StorageDevice.HostBusAdapter, &types.HostBlockHba{HostHostBusAdapter: types.HostHostBusAdapter{Device: "vmhba99", Driver: "lsi_mr3", Status: "online", Pci: "0000:18:00.0", Model: "MegaRAID 9560-8i"}})
+	// Explicit mock VMFS extent and VM inventory; simulator is not a real host.
+	const mockNAA = "naa.600e00040010f26027ad7d3730ecb7ad"
+	dsRefs := m.Map().AllReference("Datastore")
+	vmRefs := m.Map().AllReference("VirtualMachine")
+	if len(dsRefs) == 0 || len(vmRefs) == 0 {
+		t.Fatal("simulator fixture lacks datastore/VM")
+	}
+	ds := dsRefs[0].(*simulator.Datastore)
+	ds.Info = &types.VmfsDatastoreInfo{DatastoreInfo: *ds.Info.GetDatastoreInfo(), Vmfs: &types.HostVmfsVolume{Extent: []types.HostScsiDiskPartition{{DiskName: mockNAA, Partition: 1}}}}
+	ds.Summary.Type = "VMFS"
+	ds.Vm = []types.ManagedObjectReference{vmRefs[0].Reference()}
 	m.Service.TLS = &tls.Config{}
 	srv := m.Service.NewServer()
 	defer srv.Close()
@@ -70,6 +81,15 @@ func TestReadOnlySimulator(t *testing.T) {
 	}
 	if len(got.Datastores) == 0 {
 		t.Fatal("simulator datastore was not collected")
+	}
+	matched := false
+	for _, ds := range got.Datastores {
+		if len(ds.Extents) > 0 && ds.Extents[0] == mockNAA && len(ds.VMs) > 0 && ds.VMs[0] != "" {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Fatalf("mock VMFS extent / VM association was not collected: %+v", got.Datastores)
 	}
 	b, _ := json.Marshal(got)
 	if strings.Contains(string(b), `"password"`) || strings.Contains(string(b), `"pass"`) {

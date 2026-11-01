@@ -2,6 +2,8 @@ github.com/go-check/check v0.0.0-20161208181325-20d25e280405 h1:0kdUKH22y+PT7ZIT
 github.com/go-check/check v0.0.0-20161208181325-20d25e280405/go.mod h1:9ES+weclKsC9YodN5RgxqK/VD9HM9JsCSh7rNhMZE98=
 github.com/go-yaml/yaml/v3 v3.0.1 h1:lLakvY+lWMEToth2+yyGyq9wAa91oSm971MQysWD8Q4=
 github.com/go-yaml/yaml/v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+github.com/golang/crypto v0.41.0 h1:UCPqq9tV7ZtoqQbx3nz+FzRm9QSw18WwRKQTfrTApnQ=
+github.com/golang/crypto v0.41.0/go.mod h1:pO5AFd7FA68rFak7rOAGVuygIISepHftHnr8dr6+sUc=
 github.com/golang/sys v0.35.0 h1:HTXL1EphPY3s9121Wf3dUMIlDP+sK0B1XF0sybHcJiY=
 github.com/golang/sys v0.35.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

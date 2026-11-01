@@ -35,14 +35,24 @@ type Controller struct {
 	SubDevice    string `json:"subDevice"`
 	CatalogModel string `json:"catalogModel,omitempty"`
 	ProductURL   string `json:"productUrl,omitempty"`
+	OEM          string `json:"oem,omitempty"`
+	OEMReason    string `json:"oemReason,omitempty"`
 	Match        string `json:"match"` // catalog, oem, unknown
 }
 
 type Datastore struct {
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	Accessible bool   `json:"accessible"`
-	Free       int64  `json:"free"`
+	Name       string   `json:"name"`
+	Type       string   `json:"type"`
+	Accessible bool     `json:"accessible"`
+	Free       int64    `json:"free"`
+	Extents    []string `json:"extents,omitempty"` // canonical VMFS device names
+	VMs        []string `json:"vms,omitempty"`     // visible datastore inventory associations
+}
+
+type VIB struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Vendor  string `json:"vendor,omitempty"`
 }
 
 type Firewall struct {
@@ -64,24 +74,28 @@ type Check struct {
 }
 
 type Host struct {
-	ScannedAt       time.Time    `json:"scannedAt"`
-	Address         string       `json:"address"`
-	DisplayHost     string       `json:"displayHost"`
-	Name            string       `json:"name"`
-	Version         string       `json:"version"`
-	Build           string       `json:"build"`
-	FullName        string       `json:"fullName"`
-	Vendor          string       `json:"vendor"`
-	Model           string       `json:"model"`
-	SecureBoot      *bool        `json:"secureBoot,omitempty"`
-	Controllers     []Controller `json:"controllers"`
-	Datastores      []Datastore  `json:"datastores"`
-	Checks          []Check      `json:"checks"`
-	Firewall        Firewall     `json:"firewall"`
-	LWAVersion      string       `json:"lwaVersion,omitempty"`
-	Candidate       *Candidate   `json:"candidate,omitempty"`
-	CandidateReason string       `json:"candidateReason,omitempty"`
-	Warnings        []string     `json:"warnings"`
+	ScannedAt         time.Time    `json:"scannedAt"`
+	Address           string       `json:"address"`
+	DisplayHost       string       `json:"displayHost"`
+	Name              string       `json:"name"`
+	Version           string       `json:"version"`
+	Build             string       `json:"build"`
+	FullName          string       `json:"fullName"`
+	Vendor            string       `json:"vendor"`
+	Model             string       `json:"model"`
+	SecureBoot        *bool        `json:"secureBoot,omitempty"`
+	Controllers       []Controller `json:"controllers"`
+	Datastores        []Datastore  `json:"datastores"`
+	Checks            []Check      `json:"checks"`
+	Firewall          Firewall     `json:"firewall"`
+	VIBInventoryKnown bool         `json:"vibInventoryKnown"`
+	VIBs              []VIB        `json:"vibs,omitempty"`
+	LWAServiceKnown   bool         `json:"lwaServiceKnown"`
+	LWAServiceRunning bool         `json:"lwaServiceRunning"`
+	LWAVersion        string       `json:"lwaVersion,omitempty"`
+	Candidate         *Candidate   `json:"candidate,omitempty"`
+	CandidateReason   string       `json:"candidateReason,omitempty"`
+	Warnings          []string     `json:"warnings"`
 }
 
 type Candidate struct {
