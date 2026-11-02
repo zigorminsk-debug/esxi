@@ -1,0 +1,183 @@
+/* Interactive topology: a self-contained dark workspace with accessible native controls. */
+.topology-app { --topo-bg:#111d2e; --topo-panel:#152337; --topo-line:#2a3b52; --topo-text:#eaf2fd; --topo-muted:#90a3bb; color:var(--topo-text); min-width:0; }
+.topology-app *, .topology-app *:before, .topology-app *:after { box-sizing:border-box; }
+.topology-app button, .topology-app input, .topology-app select, .topology-app textarea { font:inherit; }
+.topo-icon { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.topo-intro { color:#26384f; display:flex; justify-content:space-between; gap:20px; align-items:flex-start; margin:2px 0 15px; }
+.topo-intro h2 { margin:7px 0 5px; font-size:calc(23px * var(--font-scale,1)); letter-spacing:-.5px; }
+.topo-intro p { margin:0; color:#75869b; font-size:calc(11px * var(--font-scale,1)); max-width:660px; line-height:1.7; }
+.topo-kicker { color:#6e8baa; font-size:calc(9px * var(--font-scale,1)); font-weight:700; letter-spacing:1.4px; display:flex; align-items:center; gap:8px; }
+.topo-live-dot { width:7px; height:7px; border-radius:50%; background:#42c7a8; box-shadow:0 0 0 4px #43c9a91e; }
+.topo-intro-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+.topo-intro-actions .button { color:#334861; white-space:nowrap; }
+.topo-disclaimer { background:#fff8e9; border:1px solid #f3dfb3; color:#715d37; padding:12px 15px; border-radius:9px; font-size:calc(10px * var(--font-scale,1)); line-height:1.65; margin-bottom:15px; }
+.topo-editor-shell { display:grid; grid-template-columns:178px minmax(340px,1fr) 306px; min-width:0; border:1px solid #26364b; border-radius:13px; overflow:hidden; background:var(--topo-bg); box-shadow:0 10px 35px #172d4820; }
+.topo-palette,.topo-inspector { background:var(--topo-panel); padding:18px 14px; min-width:0; }
+.topo-palette { border-right:1px solid var(--topo-line); }
+.topo-inspector { border-left:1px solid var(--topo-line); max-height:820px; overflow:auto; scrollbar-color:#53657b transparent; scrollbar-width:thin; }
+.topo-panel-caption { color:#7289a6; font-size:calc(8px * var(--font-scale,1)); font-weight:700; letter-spacing:1.5px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.topo-panel-caption span { color:#526b88; letter-spacing:.4px; }
+.topo-palette h3 { margin:21px 0 5px; font-size:calc(13px * var(--font-scale,1)); color:#eef4fd; line-height:1.4; }
+.topo-palette p { margin:0 0 15px; color:#7e94ad; font-size:calc(9px * var(--font-scale,1)); line-height:1.6; }
+.topo-tool-list { display:grid; gap:6px; }
+.topo-tool { width:100%; display:flex; align-items:center; gap:9px; text-align:left; background:#1c2e44; color:#c8d6e7; border:1px solid #293c55; border-radius:8px; min-width:0; min-height:48px; padding:7px; font-size:calc(10px * var(--font-scale,1))!important; line-height:1.35; }
+.topo-tool:hover { background:#243a54; border-color:#52729a; }
+.topo-tool>span:nth-child(2) { min-width:0; flex:1; overflow-wrap:anywhere; }
+.topo-tool-icon,.topo-node-icon,.topo-selected-icon { display:grid; place-items:center; background:#263b54; background:color-mix(in srgb,var(--device),transparent 88%); color:var(--device); border-radius:7px; flex:none; }
+.topo-tool-icon { width:30px; height:30px; }
+.topo-tool-icon .topo-icon { width:16px; height:16px; }
+.topo-tool-plus { color:#6984a5; font-size:17px; }
+.topo-tool-divider { height:1px; background:#2a3d55; margin:19px 0 14px; }
+.topo-connect-button,.topo-remove-button { display:flex; gap:8px; align-items:center; justify-content:center; width:100%; min-height:42px; border-radius:7px; padding:9px; font-size:calc(10px * var(--font-scale,1))!important; line-height:1.35; }
+.topo-connect-button { color:#a6d8fa; border:1px solid #40658a; background:#203b55; }
+.topo-connect-button.active { background:#2b6683; border-color:#72dfd6; color:white; }
+.topo-remove-button { color:#e8a4ad; border:1px solid #684455; background:#3c2938; }
+.topo-remove-button:hover:not(:disabled) { background:#503240; }
+.topo-tip { margin:9px 0 15px!important; }
+.topo-stage { min-width:0; background:#111d2e; }
+.topo-stage-head { padding:17px 18px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1px solid #26374d; }
+.topo-stage-head>div:first-child { min-width:120px; flex:1; }
+.topo-title { display:block; width:100%; min-width:0; border:1px solid transparent; border-radius:5px; background:transparent; color:#f2f6fd; font-weight:700!important; font-size:calc(15px * var(--font-scale,1))!important; padding:4px 3px; margin:5px 0 1px -3px; }
+.topo-title:hover,.topo-title:focus { border-color:#3c5878; background:#1c2d43; }
+.topo-count { color:#8195ad; font-size:calc(9px * var(--font-scale,1)); line-height:1.4; }
+.topo-stage-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.topo-stage-btn { display:inline-flex; align-items:center; gap:6px; justify-content:center; border-radius:7px; padding:8px 10px; min-height:36px; color:#d3deed; background:#1c2d43; border:1px solid #314860; font-size:calc(10px * var(--font-scale,1))!important; font-weight:600!important; white-space:nowrap; }
+.topo-stage-btn:hover { background:#29415d; }
+.topo-stage-btn.primary { background:#386fca; border-color:#467dd7; color:#fff; }
+.topo-stage-btn.primary:hover { background:#477fdc; }
+.topo-stage-btn .topo-icon { width:15px; height:15px; }
+.topo-canvas-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; padding:9px 13px; border-bottom:1px solid #22354b; background:#142237; }
+.topo-canvas-hint { font-size:calc(9px * var(--font-scale,1)); color:#8da2bd; line-height:1.45; }
+.topo-zoom { display:flex; align-items:center; gap:2px; color:#afc0d5; flex:none; }
+.topo-zoom button { width:29px; height:29px; border-radius:5px; color:#c9d6e6; background:#23364e; display:grid; place-items:center; }
+.topo-zoom button:hover { background:#355274; }
+.topo-zoom button .topo-icon { width:14px; height:14px; }
+.topo-zoom button[data-topo-action="fit"] { width:auto; display:flex; gap:4px; padding:0 7px; font-size:10px; }
+.topo-zoom>span { min-width:39px; text-align:center; font-size:11px; }
+.topo-viewport { height:610px; overflow:auto; position:relative; overscroll-behavior:contain; touch-action:pan-x pan-y; background:#0e1929; scrollbar-color:#49627f #142336; scrollbar-width:thin; }
+.topo-world-holder { position:relative; min-width:100%; min-height:100%; }
+.topo-world { position:absolute; top:0; left:0; width:2200px; height:1800px; transform-origin:0 0; background-color:#0f1b2b; background-image:radial-gradient(#3a4e67 1px,transparent 1.2px); background-size:32px 32px; }
+.topo-links,.topo-nodes { position:absolute; inset:0; width:2200px; height:1800px; pointer-events:none; }
+.topo-link-line { stroke:#6b809a; stroke-width:3; fill:none; }
+.topo-link.is-off .topo-link-line { stroke:#4c5b6c; stroke-dasharray:8 7; }
+.topo-link.is-selected .topo-link-line { stroke:#8db9fb; stroke-width:5; }
+.topo-link-hit { stroke:transparent; stroke-width:36; pointer-events:stroke; cursor:pointer; }
+.topo-link-label { fill:#aebfd2; font:600 10px Atlas,Arial,sans-serif; paint-order:stroke; stroke:#0f1b2b; stroke-width:4px; stroke-linejoin:round; pointer-events:none; }
+.topo-packet { opacity:0; pointer-events:none; }
+.is-playing .topo-link:not(.is-off) .topo-packet { opacity:1; }
+.topo-forward { fill:#40ddc9; filter:drop-shadow(0 0 5px #40ddc9); }
+.topo-return { fill:#c496ff; filter:drop-shadow(0 0 5px #c496ff); }
+.topo-node { position:absolute; width:202px; height:120px; border:1.5px solid var(--device); border-color:color-mix(in srgb,var(--device),transparent 30%); border-radius:10px; background:#192b40; box-shadow:0 7px 18px #050e1a70; padding:11px 12px 8px; color:#eef5ff; pointer-events:auto; cursor:grab; user-select:none; touch-action:none; }
+.topo-node:active { cursor:grabbing; }
+.topo-node.is-selected { outline:3px solid #9cc4ff; outline-offset:3px; }
+.topo-node.is-source { outline:3px solid #4ce1cc; outline-offset:3px; }
+.topo-node-main { display:flex; align-items:center; gap:9px; min-width:0; }
+.topo-node-icon { width:36px; height:36px; }
+.topo-node-icon .topo-icon { width:20px; height:20px; }
+.topo-node-heading { flex:1; min-width:0; display:grid; gap:3px; }
+.topo-node-heading small { font-size:9px; line-height:1.1; color:#94a9c3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.topo-node-heading strong { font-size:14px; line-height:1.15; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.topo-node-settings { width:23px; height:26px; flex:none; color:#91a7bf; border-radius:5px; padding:3px; display:grid; place-items:center; }
+.topo-node-settings:hover { color:white; background:#314b67; }
+.topo-node-settings .topo-icon { width:15px; height:15px; }
+.topo-node-info,.topo-node-host,.topo-node-nics { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; line-height:1.3; }
+.topo-node-info { color:#d3deeb; margin-top:9px; }
+.topo-node-host { color:#9fcfc5; margin-top:4px; }
+.topo-node-nics { color:#8499b1; margin-top:5px; font-size:9px; display:flex; gap:5px; align-items:center; }
+.topo-node-nics span { width:5px; height:5px; border-radius:50%; background:var(--device); }
+.topo-stage-foot { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:11px 15px; border-top:1px solid #26374d; color:#91a4bb; font-size:calc(9px * var(--font-scale,1)); line-height:1.5; }
+.topo-legend { display:flex; gap:15px; flex-wrap:wrap; }
+.topo-legend span { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.topo-legend i { display:block; width:7px; height:7px; border-radius:50%; background:#40ddc9; }
+.topo-legend i.back { background:#c496ff; }
+.topo-legend i.off { width:13px; height:0; border-top:2px dashed #69798b; border-radius:0; background:none; }
+.topo-export-status { color:#a9c6e7; font-size:calc(10px * var(--font-scale,1)); padding:0 15px; line-height:1.4; }
+.topo-export-status:not(:empty) { padding:0 15px 12px; }
+.topo-inspector-head { display:flex; align-items:center; gap:10px; margin:18px 0; min-width:0; }
+.topo-selected-icon { width:38px; height:38px; }
+.topo-selected-icon.link-icon { --device:#7ab5ff; }
+.topo-inspector h3 { color:#eef5ff; margin:0; font-size:calc(14px * var(--font-scale,1)); line-height:1.35; }
+.topo-inspector p { color:#8ba0b8; font-size:calc(9px * var(--font-scale,1)); line-height:1.6; margin:5px 0 10px; }
+.topo-inspector-empty { padding:48px 5px; text-align:center; }
+.topo-empty-orbit { display:grid; place-items:center; width:58px; height:58px; border:1px solid #3a5573; background:#20344b; color:#8fb2d9; border-radius:50%; margin:0 auto 17px; }
+.topo-empty-orbit .topo-icon { width:25px; height:25px; }
+.topo-inspector-empty p { margin:10px auto; max-width:210px; }
+.topo-inspector-hint { display:grid; gap:6px; text-align:left; background:#1b3047; border:1px solid #304a66; border-radius:8px; margin-top:30px; padding:12px; font-size:calc(9px * var(--font-scale,1)); color:#98acc2; line-height:1.5; }
+.topo-inspector-hint strong { color:#cfdeef; }
+.topo-form-section { border-top:1px solid #2a3b52; padding:15px 0; display:grid; gap:10px; }
+.topo-form-section h4 { font-size:calc(11px * var(--font-scale,1)); color:#e6eef9; margin:0; line-height:1.4; }
+.topo-form-section h4 span { color:#7f9cba; }
+.topo-form-section p { margin:0; }
+.topo-field-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.topo-field { display:grid; gap:5px; min-width:0; color:#a9bdd3; font-size:calc(9px * var(--font-scale,1)); line-height:1.4; }
+.topo-field input,.topo-field select,.topo-field textarea { width:100%; min-width:0; border:1px solid #40536b; border-radius:6px; background:#102034; color:#eef5ff; padding:8px; outline:none; font-size:calc(10px * var(--font-scale,1)); line-height:1.35; }
+.topo-field input:focus,.topo-field select:focus,.topo-field textarea:focus { border-color:#7aa9f2; box-shadow:0 0 0 2px #6da2f63b; }
+.topo-field input::placeholder,.topo-field textarea::placeholder { color:#6e839b; }
+.topo-field textarea { resize:vertical; }
+.topo-checkbox { color:#c7d6e7; display:flex; align-items:center; gap:8px; font-size:calc(10px * var(--font-scale,1)); }
+.topo-section-row { display:flex; justify-content:space-between; gap:5px; align-items:center; }
+.topo-add-nic { display:flex; gap:3px; align-items:center; color:#8cbcf4; font-size:calc(9px * var(--font-scale,1))!important; font-weight:600!important; }
+.topo-add-nic .topo-icon,.topo-inline-danger .topo-icon { width:14px; height:14px; }
+.topo-nic { background:#102034; border:1px solid #334a64; border-radius:7px; overflow:hidden; }
+.topo-nic summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:6px; color:#d6e4f4; padding:9px; font-size:calc(10px * var(--font-scale,1)); font-weight:600; }
+.topo-nic summary:after { content:'+'; color:#8aabc9; font-size:16px; }
+.topo-nic[open] summary:after { content:'−'; }
+.topo-nic summary small { font-size:calc(8px * var(--font-scale,1)); color:#7ea493; margin-left:auto; font-weight:400; }
+.topo-nic-body { padding:3px 9px 10px; display:grid; gap:9px; }
+.topo-nic-body input { background:#1a2b40; }
+.topo-inline-danger { color:#e9a1ad; display:flex; align-items:center; gap:5px; text-align:left; font-size:calc(10px * var(--font-scale,1))!important; padding:5px 0; }
+.topo-inline-danger:hover { color:#ffc2c9; }
+.topo-form-error { color:#ffb6bd; font-size:calc(10px * var(--font-scale,1)); line-height:1.6; }
+.topo-form-error:not(:empty) { background:#5b2e3b; padding:9px; border-radius:6px; margin-bottom:10px; }
+.topo-form-footer { display:grid; gap:8px; }
+.topo-form-footer [data-topo-dirty] { color:#93a9c1; font-size:calc(9px * var(--font-scale,1)); line-height:1.4; }
+.topo-form-footer .button { color:#cbd9e9; background:#22364d; border-color:#3b526d; font-size:calc(10px * var(--font-scale,1)); }
+.topo-form-footer .button.primary { background:#386fca; color:white; border-color:#467dd7; }
+.topo-warnings { color:#70531b; background:#fff7e8; border:1px solid #efdbb0; border-radius:9px; margin-top:14px; padding:13px 16px; font-size:calc(10px * var(--font-scale,1)); line-height:1.6; }
+.topo-warnings ul { margin:5px 0 0; padding-left:20px; }
+.topo-help { color:#526981; background:#fff; border:1px solid #e2e9f1; border-radius:9px; margin-top:14px; padding:14px 17px; font-size:calc(11px * var(--font-scale,1)); line-height:1.7; }
+.topo-help summary { color:#2c486a; font-weight:700; cursor:pointer; }
+.topo-help ol { padding-left:20px; }
+.topo-help p { margin-bottom:0; }
+.topo-dialog { color:#233750; border:0; border-radius:13px; padding:0; width:min(520px,calc(100vw - 32px)); max-height:calc(100vh - 32px); box-shadow:0 25px 80px #0713238c; }
+.topo-dialog::backdrop { background:#071323b3; }
+.topo-dialog-body { padding:24px; }
+.topo-dialog-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.topo-dialog-head h3 { margin:0; font-size:calc(18px * var(--font-scale,1)); color:#233750; }
+.topo-dialog-head button { color:#61768e; }
+.topo-dialog p { color:#6d8097; font-size:calc(11px * var(--font-scale,1)); line-height:1.7; }
+.topo-dialog form { display:grid; gap:11px; }
+.topo-dialog .topo-field { color:#526980; font-size:calc(10px * var(--font-scale,1)); }
+.topo-dialog .topo-field input,.topo-dialog .topo-field select { color:#233750; background:#f7f9fc; border-color:#dbe4ef; font-size:calc(11px * var(--font-scale,1)); }
+.topo-dialog .topo-form-error:not(:empty) { color:#a32632; background:#fff0f1; }
+.topo-dialog-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:13px; }
+.topo-dialog-actions .button { color:#334861; }
+.topo-dialog-actions .button.primary { color:white; }
+.topo-dialog-actions .button.danger { color:#bc3946; }
+@media(max-width:1350px) {
+ .topo-editor-shell { grid-template-columns:180px minmax(0,1fr); }
+ .topo-inspector { grid-column:1/-1; border-left:0; border-top:1px solid var(--topo-line); max-height:none; }
+ .topo-inspector-empty { padding:20px; }
+ .topo-inspector-empty p { max-width:480px; }
+ .topo-inspector-hint { margin:15px auto 0; max-width:480px; }
+ .topo-inspector form { max-width:900px; }
+}
+@media(max-width:720px) {
+ .topo-intro { display:block; }
+ .topo-intro-actions { justify-content:flex-start; margin-top:12px; }
+ .topo-editor-shell { display:flex; flex-direction:column; }
+ .topo-palette { border-right:0; border-bottom:1px solid var(--topo-line); }
+ .topo-palette h3 { margin-top:11px; }
+ .topo-tool-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .topo-tool-divider { margin:12px 0; }
+ .topo-tip { margin:6px 0 10px!important; }
+ .topo-stage-head { flex-wrap:wrap; }
+ .topo-stage-head>div:first-child { width:100%; }
+ .topo-stage-actions { justify-content:flex-start; }
+ .topo-canvas-toolbar { flex-wrap:wrap; }
+ .topo-viewport { height:450px; }
+ .topo-stage-foot { align-items:flex-start; flex-wrap:wrap; }
+ .topo-inspector { border-top:1px solid var(--topo-line); }
+ .topo-field-grid { gap:7px; }
+ .topo-dialog-body { padding:19px; }
+}

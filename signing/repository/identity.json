@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "warning": "PUBLIC LAB IDENTITY. Private keys and passwords are intentionally committed. Anyone can sign packages as ESXi Atlas. Not for production.",
+  "createdAt": "2026-10-28T20:12:54.507Z",
+  "android": {
+    "keystore": "signing/repository/android-release.p12",
+    "storeType": "PKCS12",
+    "alias": "esxi-atlas",
+    "storePassword": "X9__6VfLDHtG2kASSYa9eEd5dJbmrDb_bjwuiDnMv-0",
+    "keyPassword": "X9__6VfLDHtG2kASSYa9eEd5dJbmrDb_bjwuiDnMv-0",
+    "certificateSha256": "2a590e64c430aa1e93347b462d13743494c4af73d54437fc0c367c9020b7917d"
+  },
+  "windows": {
+    "certificate": "signing/repository/windows-signing.pfx",
+    "password": "dO97blH1HtBkCktGMVoWOtOxe65tLKdf8e7qzI9TcSI",
+    "publisherName": "ESXi Atlas Code Signing",
+    "certificateSha256": "18635d7355b90471f8df09ad545578ce32b9247ff3d2529fe4367d75ea66e4a1"
+  }
+}

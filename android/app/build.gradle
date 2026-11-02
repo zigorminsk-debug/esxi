@@ -1,0 +1,57 @@
+import groovy.json.JsonSlurper
+
+plugins { id 'com.android.application' }
+
+// Owner-approved public lab identity. Environment variables can override it for a future private identity.
+def repoIdentityFile = rootProject.file('../signing/repository/identity.json')
+def repoIdentity = repoIdentityFile.exists() ? new JsonSlurper().parse(repoIdentityFile) : null
+def keystorePath = System.getenv('ANDROID_KEYSTORE_PATH') ?: (repoIdentity ? rootProject.file('../' + repoIdentity.android.keystore).absolutePath : null)
+def releaseSigned = keystorePath != null && !keystorePath.trim().isEmpty()
+def certificatePin = (System.getenv('ANDROID_CERT_SHA256') ?: repoIdentity?.android?.certificateSha256 ?: '').toLowerCase(Locale.ROOT)
+def keystoreType = System.getenv('ANDROID_KEYSTORE_TYPE') ?: repoIdentity?.android?.storeType ?: 'JKS'
+def keystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: repoIdentity?.android?.storePassword
+def signingKeyAlias = System.getenv('ANDROID_KEY_ALIAS') ?: repoIdentity?.android?.alias
+def signingKeyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: repoIdentity?.android?.keyPassword
+if (releaseSigned && !(certificatePin ==~ /[0-9a-f]{64}/)) {
+    throw new GradleException('A signed release requires a public certificate SHA-256 pin.')
+}
+android {
+    namespace 'ai.arena.esxiatlas'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'ai.arena.esxiatlas'
+        minSdk 26
+        targetSdk 35
+        versionCode ((project.findProperty('atlasVersionCode') ?: '10000') as Integer)
+        versionName (project.findProperty('atlasVersionName') ?: '1.0.0')
+        buildConfigField 'String', 'CERTIFICATE_PIN', '"' + certificatePin + '"'
+        buildConfigField 'String', 'UPDATE_REPOSITORY', '"zigorminsk-debug/esxi"'
+    }
+    signingConfigs {
+        if (releaseSigned) {
+            release {
+                storeFile file(keystorePath)
+                storeType keystoreType
+                storePassword keystorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing false
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (releaseSigned) signingConfig signingConfigs.release
+            // With the committed lab identity this produces an installable signed APK. Without any identity it remains unsigned.
+        }
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildFeatures { buildConfig true }
+    lint { abortOnError true; checkReleaseBuilds true }
+}
+dependencies { implementation 'androidx.core:core:1.15.0' }
