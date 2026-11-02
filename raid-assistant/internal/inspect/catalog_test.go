@@ -86,3 +86,54 @@ func TestCandidateReasonPrefersSmartArrayOverHPESubsystemAHCI(t *testing.T) {
 		t.Fatalf("incorrect controller or overconfident recommendation: %s", r)
 	}
 }
+
+// The screenshot shows SAS3108 as "Invader", status unknown, and the complete
+// 9361 subsystem tuple. Identification must never imply an MR 7.38 candidate.
+func Test9361IdentificationDoesNotAuthorizeLSAArchive(t *testing.T) {
+	c := Controller{Device: "vmhba2", Model: "MegaRAID SAS Invader Controller", Driver: "lsi_mr3", Status: "unknown", PCI: "0000:17:00.0", Vendor: "1000", DeviceID: "005D", SubVendor: "1000", SubDevice: "9361"}
+	CatalogMatch(&c)
+	if c.Match != "identified" || c.CatalogModel != "MegaRAID SAS 9361-8i" || c.ProductURL != SAS9361Downloads {
+		t.Fatalf("incorrect identification: %+v", c)
+	}
+	for _, version := range []string{"", "7.0.3", "8.0.0", "8.0.1", "8.0.2", "8.0.3", "9.0.0"} {
+		for _, status := range []string{"unknown", "online", "offline", ""} {
+			x := c
+			x.Status = status
+			if candidate := ChooseCandidate(version, []Controller{x}); candidate != nil {
+				t.Fatalf("identified-only model selected package for %q/%q: %+v", version, status, candidate)
+			}
+			r := CandidateReason(version, []Controller{x})
+			for _, want := range []string{"9361-8i", "MR 7.38", "не подтверждён"} {
+				if !strings.Contains(r, want) {
+					t.Fatalf("missing %q for %q: %s", want, version, r)
+				}
+			}
+		}
+	}
+}
+
+func Test9361RequiresExactSubsystemAndDoesNotShadow95xx(t *testing.T) {
+	base := Controller{Device: "vmhba2", Model: "MegaRAID SAS Invader Controller", Driver: "lsi_mr3", Status: "online", Vendor: "1000", DeviceID: "005d", SubVendor: "1000", SubDevice: "9361"}
+	for _, mutation := range []func(*Controller){
+		func(c *Controller) { c.Vendor = "1028" },
+		func(c *Controller) { c.DeviceID = "005e" },
+		func(c *Controller) { c.SubVendor = "1028" },
+		func(c *Controller) { c.SubDevice = "9360" },
+		func(c *Controller) { c.SubDevice = "" },
+	} {
+		c := base
+		CatalogMatch(&c)
+		mutation(&c)
+		CatalogMatch(&c)
+		if c.Match == "identified" || c.CatalogModel != "" || c.ProductURL != "" || ChooseCandidate("8.0.3", []Controller{c}) != nil {
+			t.Fatalf("partial or mismatched PCI tuple accepted: %+v", c)
+		}
+	}
+	CatalogMatch(&base)
+	other := Controller{Device: "vmhba3", Driver: "lsi_mr3", Status: "online", Vendor: "1000", DeviceID: "10e2", SubVendor: "1000", SubDevice: "4010"}
+	CatalogMatch(&other)
+	candidate := ChooseCandidate("8.0.3", []Controller{base, other})
+	if candidate == nil || candidate.Model != "MegaRAID 9560-8i" {
+		t.Fatalf("95xx candidate lost or misattributed: %+v", candidate)
+	}
+}

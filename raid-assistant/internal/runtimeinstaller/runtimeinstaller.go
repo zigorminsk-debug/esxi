@@ -121,7 +121,7 @@ func download(ctx context.Context, client *http.Client, source, tempRoot string)
 	if err != nil {
 		return "", nil, err
 	}
-	req.Header.Set("User-Agent", "ESXi-RAID-Assistant/0.2.2")
+	req.Header.Set("User-Agent", "ESXi-RAID-Assistant/0.2.3")
 	resp, err := cl.Do(req)
 	if err != nil {
 		return "", nil, err

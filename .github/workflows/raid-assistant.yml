@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Publish the verified 0.2.2 prerelease'
+        description: 'Publish the verified 0.2.3 prerelease'
         required: true
         type: boolean
         default: false
@@ -69,7 +69,7 @@ jobs:
         run: |
           $env:CGO_ENABLED='0'
           New-Item -ItemType Directory -Force ../raid-build | Out-Null
-          go build -trimpath -ldflags '-s -w -H windowsgui' -o ../raid-build/ESXi-RAID-Assistant-0.2.2-windows-x64.exe ./cmd/raid-assistant
+          go build -trimpath -ldflags '-s -w -H windowsgui' -o ../raid-build/ESXi-RAID-Assistant-0.2.3-windows-x64.exe ./cmd/raid-assistant
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Sign with the persistent public lab certificate and verify identity
         shell: pwsh
@@ -77,7 +77,7 @@ jobs:
           $identity = Get-Content signing/repository/identity.json -Raw | ConvertFrom-Json
           $tool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (!$tool) { throw 'Windows SDK signtool not found' }
-          $exe = (Resolve-Path raid-build/ESXi-RAID-Assistant-0.2.2-windows-x64.exe).Path
+          $exe = (Resolve-Path raid-build/ESXi-RAID-Assistant-0.2.3-windows-x64.exe).Path
           & $tool.FullName sign /fd SHA256 /f $identity.windows.certificate /p $identity.windows.password $exe
           if ($LASTEXITCODE -ne 0) { throw 'signtool failed' }
           $sig = Get-AuthenticodeSignature $exe
@@ -109,7 +109,7 @@ jobs:
             if ($env:ESXI_RAID_ASSISTANT_SELFTEST_ENDPOINT -notmatch '^127\.0\.0\.1:\d+$') { throw 'Simulator is not loopback-only' }
             $env:ESXI_RAID_ASSISTANT_SELFTEST='1'
             $env:ESXI_RAID_ASSISTANT_SELFTEST_TRACE=Join-Path $env:RUNNER_TEMP 'raid-selftest.log'
-            $exe = (Resolve-Path raid-build/ESXi-RAID-Assistant-0.2.2-windows-x64.exe).Path
+            $exe = (Resolve-Path raid-build/ESXi-RAID-Assistant-0.2.3-windows-x64.exe).Path
             $p = Start-Process -FilePath $exe -PassThru
             $timedOut = !$p.WaitForExit(90000)
             if ($timedOut) { Stop-Process -Id $p.Id -Force }
@@ -129,7 +129,7 @@ jobs:
           Copy-Item signing/public/windows-certificate.sha256 raid-build/
           Copy-Item raid-assistant/assets/raid-assistant.ico raid-build/ESXi-RAID-Assistant.ico
           Copy-Item raid-assistant/assets/raid-assistant-icon.png raid-build/ESXi-RAID-Assistant-icon.png
-          $files=@('ESXi-RAID-Assistant-0.2.2-windows-x64.exe','ESXi-RAID-Assistant.ico','ESXi-RAID-Assistant-icon.png')
+          $files=@('ESXi-RAID-Assistant-0.2.3-windows-x64.exe','ESXi-RAID-Assistant.ico','ESXi-RAID-Assistant-icon.png')
           $sums=foreach ($file in $files) { $hash=(Get-FileHash "raid-build/$file" -Algorithm SHA256).Hash.ToLower(); "$hash  $file" }
           $sums | Set-Content -Encoding ascii raid-build/SHA256SUMS.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -144,7 +144,7 @@ jobs:
     # explicit push marker supports a gated prerelease from the open PR branch.
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish) ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/arena/') && contains(github.event.head_commit.message, '[publish-raid-0.2.2]'))
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/arena/') && contains(github.event.head_commit.message, '[publish-raid-0.2.3]'))
     needs: [go-tests, browser-tests, windows-build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -160,9 +160,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -s release-assets/ESXi-RAID-Assistant-0.2.2-windows-x64.exe
+          test -s release-assets/ESXi-RAID-Assistant-0.2.3-windows-x64.exe
           test -s release-assets/SHA256SUMS.txt
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
-          gh release create raid-assistant-v0.2.2 release-assets/* \
-            --target "$GITHUB_SHA" --title 'ESXi RAID Assistant 0.2.2 (предварительная версия)' \
+          gh release create raid-assistant-v0.2.3 release-assets/* \
+            --target "$GITHUB_SHA" --title 'ESXi RAID Assistant 0.2.3 (предварительная версия)' \
             --notes-file raid-assistant/RELEASE-NOTES.md --prerelease --latest=false

@@ -38,7 +38,7 @@ type Controller struct {
 	ProductURL   string `json:"productUrl,omitempty"`
 	OEM          string `json:"oem,omitempty"`
 	OEMReason    string `json:"oemReason,omitempty"`
-	Match        string `json:"match"` // catalog, oem, unknown
+	Match        string `json:"match"` // catalog (package candidate), identified (model only), oem, unknown
 }
 
 type Datastore struct {

@@ -106,3 +106,30 @@ func TestFirewallCommandsSuppressedWhenAPIDisallowsChanges(t *testing.T) {
 		t.Fatal("missing explanation of firewall restriction")
 	}
 }
+
+func Test9361ReportOffersReadOnlyPathButNeverAnUnverifiedPackage(t *testing.T) {
+	h := fixtureHost()
+	h.Candidate = nil
+	h.Controllers = []inspect.Controller{{Device: "vmhba2", Model: "MegaRAID SAS Invader Controller", Status: "unknown", Vendor: "1000", DeviceID: "005d", SubVendor: "1000", SubDevice: "9361", Match: "identified", CatalogModel: "MegaRAID SAS 9361-8i"}}
+	h.CandidateReason = inspect.CandidateReason(h.Version, h.Controllers)
+	r := Build(h, fixtureBundle(), "Data O'Brien", "192.0.2.1")
+	for _, want := range []string{"9361-8i", "MR 7.38", "не перечисляет", "unknown", inspect.SAS9361HCL, inspect.SAS9361Downloads} {
+		if !strings.Contains(r.Markdown, want) {
+			t.Fatalf("missing %q in report: %s", want, r.Markdown)
+		}
+	}
+	if !strings.Contains(commandText(r), "/opt/storcli/bin/storcli64 show nolog") {
+		t.Fatal("read-only StorCLI overview absent")
+	}
+	for _, forbidden := range []string{"vib install", "software component apply", "firewall ruleset set", "--force", "--no-sig-check"} {
+		if strings.Contains(commandText(r), forbidden) {
+			t.Fatalf("unsafe %q for identification-only adapter", forbidden)
+		}
+	}
+	// A matching 95xx on the same server does not prove 9361 package support.
+	h.Candidate = fixtureHost().Candidate
+	r = Build(h, fixtureBundle(), "Data O'Brien", "192.0.2.1")
+	if !strings.Contains(r.Markdown, "не к 9361") || !strings.Contains(r.Markdown, "не перечисляет этот контроллер") {
+		t.Fatal("coexisting-controller caveat missing")
+	}
+}

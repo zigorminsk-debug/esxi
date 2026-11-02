@@ -131,3 +131,26 @@ func TestExtensionLinksAreFixedAndAvailableBeforeLogin(t *testing.T) {
 		t.Fatal("arbitrary link was allowed")
 	}
 }
+
+func Test9361OnlyDoesNotExposePackageAndUsesFixedVendorLinks(t *testing.T) {
+	a := newTestApp(t)
+	c := inspect.Controller{Vendor: "1000", DeviceID: "005d", SubVendor: "1000", SubDevice: "9361", Status: "online", Driver: "lsi_mr3", Device: "vmhba2"}
+	inspect.CatalogMatch(&c)
+	a.host = &inspect.Host{Version: "8.0.3", Controllers: []inspect.Controller{c}}
+	a.host.Candidate = inspect.ChooseCandidate(a.host.Version, a.host.Controllers)
+	if _, err := a.StartDownload(true); err == nil {
+		t.Fatal("9361 incorrectly authorized official 95xx package download")
+	}
+	if _, err := a.StartImport("arbitrary.vib"); err == nil {
+		t.Fatal("9361 incorrectly authorized arbitrary LWA import")
+	}
+	for kind, want := range map[string]string{"9361-hcl": inspect.SAS9361HCL, "9361-downloads": inspect.SAS9361Downloads, "9361-package-readme": "https://docs.broadcom.com/docs/1232745888"} {
+		got, err := a.Link(kind)
+		if err != nil || got != want {
+			t.Fatalf("unexpected link %q: %q %v", kind, got, err)
+		}
+	}
+	if _, err := a.Link("product"); err == nil {
+		t.Fatal("identified-only model should not expose candidate product link")
+	}
+}

@@ -25,3 +25,5 @@
 .security-modal-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:#fff0d5;color:#9b6816;font-size:1.2rem;font-weight:800}
 .security-modal h2{font-size:1.14rem;margin:14px 0 10px}.security-modal p{font-size:.84rem;line-height:1.55;color:#62748b;white-space:pre-line}.security-modal strong{color:#8a5415}
 .security-modal-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:9px;margin-top:20px}
+
+#help9361 .subtle{font-size:.78rem;color:#65768d;line-height:1.55}

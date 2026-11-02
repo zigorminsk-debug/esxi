@@ -220,3 +220,42 @@ func TestSimulatorLoginFailureAndUnreachableHost(t *testing.T) {
 		t.Fatalf("unreachable host did not return a useful error: %v", err)
 	}
 }
+
+// Simulate the PCI/HBA values shown in the user's screenshot; this is not a
+// connection to a real ESXi host and does not validate RAID health or LWA.
+func TestSimulatorIdentifies9361WithoutSuggestingPackage(t *testing.T) {
+	m := simulator.ESX()
+	if err := m.Create(); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Remove()
+	hs := m.Map().AllReference("HostSystem")[0].(*simulator.HostSystem)
+	hs.Config.Product.Version = "8.0.3"
+	hs.Hardware.PciDevice = append(hs.Hardware.PciDevice, types.HostPciDevice{Id: "0000:17:00.0", ClassId: 0x0104, VendorId: 0x1000, DeviceId: 0x005d, SubVendorId: 0x1000, SubDeviceId: 0x9361 - 0x10000, DeviceName: "MegaRAID SAS Invader Controller"})
+	hs.Config.StorageDevice.HostBusAdapter = append(hs.Config.StorageDevice.HostBusAdapter, &types.HostBlockHba{HostHostBusAdapter: types.HostHostBusAdapter{Device: "vmhba2", Driver: "lsi_mr3", Status: "unknown", Pci: "0000:17:00.0", Model: "MegaRAID SAS Invader Controller"}})
+	m.Service.TLS = &tls.Config{}
+	srv := m.Service.NewServer()
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	cert, err := PeekCertificate(ctx, srv.URL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := Scan(ctx, Request{Address: srv.URL.Host, User: "user", Password: "pass", Pin: cert.SHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *Controller
+	for i := range host.Controllers {
+		if host.Controllers[i].PCI == "0000:17:00.0" {
+			found = &host.Controllers[i]
+		}
+	}
+	if found == nil || found.Match != "identified" || found.Status != "unknown" || found.CatalogModel != "MegaRAID SAS 9361-8i" {
+		t.Fatalf("missing exact simulated adapter: %+v", host.Controllers)
+	}
+	if host.Candidate != nil || !strings.Contains(host.CandidateReason, "MR 7.38") {
+		t.Fatalf("unsafe package candidate: %+v reason=%s", host.Candidate, host.CandidateReason)
+	}
+}

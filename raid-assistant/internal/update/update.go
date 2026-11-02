@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const Version = "0.2.2"
+const Version = "0.2.3"
 const Endpoint = "https://api.github.com/repos/zigorminsk-debug/esxi/releases?per_page=100"
 const ReleasesURL = "https://github.com/zigorminsk-debug/esxi/releases"
 

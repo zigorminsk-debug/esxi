@@ -215,9 +215,9 @@ func collectChecks(ctx context.Context, vc *vim25.Client, mh mo.HostSystem, h *H
 		h.Checks = append(h.Checks, Check{Label: label, Value: value, Status: status, Detail: detail})
 	}
 	if supportedVersion(h.Version) {
-		check("Версия ESXi", strings.TrimSpace(h.Version+" · build "+h.Build), "ok", "README выбранного релиза перечисляет ESXi 8.0 U1, U2 и U3; конкретную сборку всё равно нужно сверить.")
+		check("Версия ESXi", strings.TrimSpace(h.Version+" · build "+h.Build), "ok", "README MR 7.38 перечисляет ESXi 8.0 U1, U2 и U3; это не подтверждает поддержку обнаруженного контроллера или конкретной сборки.")
 	} else {
-		check("Версия ESXi", strings.TrimSpace(h.Version+" · build "+h.Build), "warn", "README выбранного архива перечисляет только ESXi 8.0 U1, U2 и U3; автоматический подбор не выполняется.")
+		check("Версия ESXi", strings.TrimSpace(h.Version+" · build "+h.Build), "warn", "README MR 7.38 перечисляет только ESXi 8.0 U1, U2 и U3; автоматический подбор этого пакета не выполняется.")
 	}
 	if h.Candidate != nil {
 		check("Каталог контроллеров", "Есть точное совпадение PCI ID", "ok", "Это не подтверждает состояние массива, firmware, подпись пакета или поддержку OEM.")

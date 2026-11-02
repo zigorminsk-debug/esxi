@@ -34,11 +34,17 @@
   window.goImportStart = async () => { imported = fakeBundle(); return start(imported); };
   window.goReport = async opts => {
     if (!current) throw new Error('Сначала проверьте ESXi');
+    const models = (current.controllers||[]).map(c=>c.catalogModel||c.model).filter(Boolean).join(', ') || 'нет данных';
     const steps = [
-      {title:'Проверьте исходные данные',body:`Демонстрационный хост ${current.displayHost}, ESXi 8.0.3, контроллер MegaRAID 9560-8i. Firmware, Secure Boot и здоровье RAID не проверены.`,commands:['vmware -vl','esxcli storage core adapter list','esxcli hardware pci list']},
-      {title:'Подготовьте сервер и резервные копии',body:'Проверьте резервные копии, состояние RAID и совместимость OEM. Запланируйте окно обслуживания.'},
-      {title:'Сверьте пакет и условия Broadcom',body:'Каталог Broadcom указывает LSA для ESXi. Сверьте README, firmware и подпись. LWM не заменяет LSA.'}
+      {title:'Проверьте исходные данные',body:`Демонстрационный хост ${current.displayHost}, ESXi ${current.version}, контроллеры: ${models}. Firmware, Secure Boot и здоровье RAID не проверены.`,commands:['vmware -vl','esxcli storage core adapter list','esxcli hardware pci list']},
+      {title:'Подготовьте сервер и резервные копии',body:'Проверьте резервные копии, состояние RAID и совместимость OEM. Запланируйте окно обслуживания.'}
     ];
+    if (!current.candidate) {
+      if ((current.controllers||[]).some(c=>c.match==='identified' && c.catalogModel==='MegaRAID SAS 9361-8i')) steps.push({title:'MegaRAID SAS 9361-8i: уточните пакет и состояние',body:'ДЕМО: MR 7.38 не перечисляет 9361-8i; совместимый LWA не подтверждён. Команда только для уже установленного StorCLI64.',commands:['/opt/storcli/bin/storcli64 show nolog']});
+      steps.push({title:'Остановитесь: пакет не определён',body:current.candidateReason||'ДЕМО: подходящий пакет не подтверждён.'});
+      return {title:'Инструкция по LSA / LWA для ESXi',host:current.displayHost,steps,markdown:'# ДЕМО: инструкция для ESXi\n\n'+steps.map((s,i)=>`## ${i+1}. ${s.title}\n\n${s.body}\n\n${(s.commands||[]).join('\n')}`).join('\n\n')};
+    }
+    steps.push({title:'Сверьте пакет и условия Broadcom',body:'Каталог Broadcom указывает LSA для указанной модели. Сверьте README, firmware и подпись. LWM не заменяет LSA.'});
     if (!imported) steps.push({title:'Получите и проверьте VIB',body:'Скачайте архив из официального источника и выберите его в приложении. Это демонстрация.'});
     else if (!opts.datastore) steps.push({title:'Выберите доступный datastore',body:'Выберите хранилище для формирования команд.'});
     else {
@@ -76,7 +82,7 @@
   window.goMonitorStop=async()=>{monitoring={...monitoring,running:false,snapshot:null,sequence:0,alertSequence:0};return monitoring;};
   window.goHistory=async()=>history;
   window.goHistoryClear=async()=>{history=[];};
-  window.goUpdateStart=async()=>start({current:'0.2.2',latest:'0.2.2',available:false,note:'ДЕМО: GitHub не запрашивался.'});
+  window.goUpdateStart=async()=>start({current:'0.2.3',latest:'0.2.3',available:false,note:'ДЕМО: GitHub не запрашивался.'});
   window.goScreenshotLoad=async()=>null;
   window.goScreenshotImport=async()=>{throw new Error('В демо-режиме файл не импортируется');};
   window.goScreenshotClear=async()=>{};

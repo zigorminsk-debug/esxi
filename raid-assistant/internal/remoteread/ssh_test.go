@@ -119,3 +119,23 @@ func TestRejectArbitraryCommands(t *testing.T) {
 		t.Fatal("unexpected command")
 	}
 }
+
+func Test9361ShortcutExecutesOnlyTheFixedStorCLI64Read(t *testing.T) {
+	addr, auth, cmds, mu, cleanup := mock(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	key, err := ProbeKey(ctx, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Read(ctx, addr, Request{User: "root", Password: "test-only", Kind: "storcli64", Fingerprint: key.Fingerprint})
+	if err != nil || snapshot == nil || auth.Load() != 1 {
+		t.Fatalf("read failed: %+v, auth %d: %v", snapshot, auth.Load(), err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(*cmds) != 1 || (*cmds)[0] != "/opt/storcli/bin/storcli64 /call show all nolog J" {
+		t.Fatalf("unexpected commands: %v", *cmds)
+	}
+}

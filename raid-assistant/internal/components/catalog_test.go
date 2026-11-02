@@ -39,3 +39,14 @@ func TestCatalogPresenceAndFixedOfficialSources(t *testing.T) {
 		t.Fatal("source allowlist invalid")
 	}
 }
+
+func TestStorCLIInventoryChecksLegacyNamesWithoutProvingCompatibility(t *testing.T) {
+	for _, name := range []string{"storcli", "VMWARE-STORCLI64", "vmware-storcli", "storcli2"} {
+		h := &inspect.Host{VIBInventoryKnown: true, VIBs: []inspect.VIB{{Name: name, Version: "fixture"}}}
+		for _, item := range List(h) {
+			if item.ID == "storcli" && (item.Presence != "found" || len(item.Found) != 1) {
+				t.Fatalf("VIB %q missed: %+v", name, item)
+			}
+		}
+	}
+}

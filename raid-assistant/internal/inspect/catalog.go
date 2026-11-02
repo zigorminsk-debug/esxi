@@ -12,6 +12,9 @@ import (
 // independent validation. No LWM package is treated as LSA.
 // PCI cross-reference: https://admin.pci-ids.ucw.cz/read/PC/1000/10e2
 // and https://www.open-e.com/support-and-services/hardware-compatibility-list/open-e-jovian-dss/
+// A catalog match is also a match to the specific pinned LSA archive below.
+// Keep recognition-only models separate: identifying a PCI ID is not evidence
+// that this archive supports the model, its firmware, or its ESXi version.
 var retailControllers = map[string]struct{ model, slug string }{
 	"1000:10e2:1000:4010": {"MegaRAID 9560-8i", "megaraid-9560-8i"},
 	"1000:10e2:1000:4020": {"MegaRAID 9580-8i8e", "megaraid-9580-8i8e"},
@@ -19,17 +22,40 @@ var retailControllers = map[string]struct{ model, slug string }{
 	"1000:10e6:1000:40da": {"MegaRAID 9520-2M2", "megaraid-9520-2m2"},
 }
 
+// SAS 9361 is identified by the complete PCI tuple, not merely SAS3108 or
+// the lsi_mr3 driver. The MR 7.38 ESXi LSA README lists only 95xx models; it
+// does not list 9361. Consequently this entry MUST NOT select that package.
+// HCL: https://compatibilityguide.broadcom.com/detail?program=io&productId=35237&persona=live
+var identifiedControllers = map[string]struct{ model, productURL string }{
+	"1000:005d:1000:9361": {"MegaRAID SAS 9361-8i", SAS9361Downloads},
+}
+
+// SAS9361HCL identifies the source for the complete PCI tuple; HCL must still
+// be checked for the actual ESXi version, driver, firmware and server.
+const SAS9361HCL = "https://compatibilityguide.broadcom.com/detail?program=io&productId=35237&persona=live"
+
+// SAS9361Downloads is the vendor's legacy product search, not a package link.
+const SAS9361Downloads = "https://www.broadcom.com/support/download-search?dk=&pa=&pf=RAID+Controller+Cards&pg=Storage+Adapters%2C+Controllers%2C+and+ICs&pn=MegaRAID+SAS+9361-8i&po="
+
 const officialDownload = "https://docs.broadcom.com/docs/1232745889"
 const officialReadme = "https://docs.broadcom.com/docs/1232745888"
 const officialGuide = "https://techdocs.broadcom.com/us/en/storage-and-ethernet-connectivity/enterprise-storage-solutions/lsa-lsi-storage-authority-software/2-18/Managing-Light-Weight-Agent/Installing-LWA-on-VMware-ESXi/Installing-LWA-on-VMware-ESXi8x.html"
 
 func CatalogMatch(c *Controller) {
+	// Do not retain model/package metadata if the same record is reclassified.
+	c.Match, c.CatalogModel, c.ProductURL = "", "", ""
 	c.OEM, c.OEMReason = classifyOEM(*c)
 	key := strings.ToLower(strings.Join([]string{c.Vendor, c.DeviceID, c.SubVendor, c.SubDevice}, ":"))
 	if item, ok := retailControllers[key]; ok {
 		c.Match = "catalog"
 		c.CatalogModel = item.model
 		c.ProductURL = "https://www.broadcom.com/products/storage/raid-controllers/" + item.slug
+		return
+	}
+	if item, ok := identifiedControllers[key]; ok {
+		c.Match = "identified"
+		c.CatalogModel = item.model
+		c.ProductURL = item.productURL
 		return
 	}
 	if c.OEM != "" {
@@ -94,11 +120,22 @@ func ChooseCandidate(version string, controllers []Controller) *Candidate {
 // CandidateReason describes why the narrow catalog cannot select a package.
 // It is not a claim that the hardware itself is incompatible.
 func CandidateReason(version string, controllers []Controller) string {
+	identified := ""
+	for _, c := range controllers {
+		if c.Match == "identified" && c.CatalogModel == "MegaRAID SAS 9361-8i" {
+			identified = "По полному PCI ID обнаружен MegaRAID SAS 9361-8i (SAS3108). Версии firmware, OEM и состояние массива нужно подтвердить. README пакета LSA MR 7.38 перечисляет другие модели, но не 9361-8i; совместимый LWA для этого контроллера и данного ESXi не подтверждён."
+			break
+		}
+	}
 	if !supportedVersion(version) {
 		if version == "" {
 			version = "неизвестна"
 		}
-		return fmt.Sprintf("Версия ESXi: %s. README этого архива перечисляет только ESXi 8.0 U1, U2 и U3; для остальных версий пакет автоматически не выбирается.", version)
+		reason := fmt.Sprintf("Версия ESXi: %s. README архива MR 7.38 перечисляет только ESXi 8.0 U1, U2 и U3; для остальных версий этот пакет автоматически не выбирается.", version)
+		if identified != "" {
+			return identified + " " + reason
+		}
+		return reason
 	}
 	if len(controllers) == 0 {
 		return "API не вернул адаптеры или PCI ID; уточните модель и права просмотра в Host Client."
@@ -107,6 +144,9 @@ func CandidateReason(version string, controllers []Controller) string {
 		if c.Match == "catalog" {
 			return fmt.Sprintf("PCI ID соответствует %s, но активный HBA с драйвером не подтверждён: адаптер %s, драйвер %s, состояние %s. Проверьте драйвер и passthrough на хосте.", c.CatalogModel, knownOr(c.Device), knownOr(c.Driver), knownOr(c.Status))
 		}
+	}
+	if identified != "" {
+		return identified
 	}
 	// A generic OEM AHCI function can precede the actual RAID controller.
 	// Prefer a model/driver-confirmed HPE Smart Array rather than reporting

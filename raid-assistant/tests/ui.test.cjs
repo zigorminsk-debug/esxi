@@ -258,3 +258,61 @@ test('Windows minimum size at enlarged type has no page-level horizontal overflo
   assert.ok(measure.w<=measure.inner+2,JSON.stringify(measure));assert.equal(measure.scale.trim(),'1.7');
  }finally{await p.close()}
 });
+
+test('9361 screenshot: model-only identification, no 95xx package, and read-only next steps',async()=>{
+ const p=await pageFor();try{
+  const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(base);
+  await p.evaluate(()=>{
+   const oldPoll=window.goPoll;
+   window.goPoll=async id=>{const r=await oldPoll(id);if(r.data?.controllers && r.data.displayHost==='192.0.2.10'){
+    r.data.controllers=[
+     {device:'vmhba0',model:'Intel Lewisburg SATA AHCI',driver:'vmw_ahci',status:'online',vendor:'8086',deviceId:'a1d2',subVendor:'8086',subDevice:'0000',match:'unknown'},
+     {device:'vmhba2',model:'MegaRAID SAS Invader Controller',driver:'lsi_mr3',status:'unknown',pci:'0000:17:00.0',vendor:'1000',deviceId:'005d',subVendor:'1000',subDevice:'9361',catalogModel:'MegaRAID SAS 9361-8i',match:'identified'}];
+    r.data.candidate=null;r.data.candidateReason='По полному PCI ID обнаружен MegaRAID SAS 9361-8i. README LSA MR 7.38 не перечисляет 9361-8i; совместимый LWA не подтверждён.';
+   }return r;};
+   window.copied='';window.goClipboard=async x=>{window.copied=x};window.openedKind='';window.goOpenLink=async x=>{window.openedKind=x};window.sshCalls=0;window.goSSHReadStart=async()=>{window.sshCalls++;throw new Error('must not be called')};
+  });
+  await scan(p);
+  const rows=p.locator('#controllerRows');
+  assert.match(await rows.innerText(),/MegaRAID SAS 9361-8i/);assert.match(await rows.innerText(),/МОДЕЛЬ ПО PCI/);
+  assert.match(await rows.innerText(),/статус API неизвестен/);assert.match(await rows.innerText(),/здоровье RAID не проверено/);
+  assert.equal(await p.locator('#packageNoMatch').isVisible(),true);assert.equal(await p.locator('#packageMatch').isVisible(),false);
+  assert.match(await p.locator('#noMatchReason').innerText(),/MR 7\.38/);
+  assert.equal(await p.locator('#help9361').isVisible(),true);assert.match(await p.locator('#help9361').innerText(),/уже установлен/);
+  assert.match(await p.locator('#storcli9361Inventory').innerText(),/не найдены/);
+  await p.locator('#reportResult').waitFor({state:'visible'});
+  assert.match(await p.locator('#steps').innerText(),/9361-8i/);assert.doesNotMatch(await p.locator('#steps').innerText(),/vib install/);
+  await p.click('#copy9361');assert.equal(await p.evaluate(()=>window.copied),'/opt/storcli/bin/storcli64 show nolog');
+  await p.locator('[data-link="9361-hcl"]').click();assert.equal(await p.evaluate(()=>window.openedKind),'9361-hcl');
+  await p.click('#read9361');assert.equal(await p.locator('#sshDetails').evaluate(e=>e.open),true);assert.equal(await p.locator('#sshKind').inputValue(),'storcli64');
+  assert.equal(await p.evaluate(()=>window.sshCalls),0,'shortcut must not log in or execute a command');
+  await p.fill('#address','192.0.2.11');assert.equal(await p.locator('#packageResult').isVisible(),false);
+  await p.fill('#password','test-password-not-real');await p.click('#connectButton');await p.locator('#diagnosticResult').waitFor({state:'visible'});
+  assert.equal(await p.locator('#help9361').isVisible(),false,'old model hint leaked to a different host');
+  assert.equal(await p.locator('#packageMatch').isVisible(),true);assert.equal(errors.length,0,errors.join('\n'));
+ }finally{await p.close()}
+});
+
+test('a 95xx candidate on the same host is not presented as support for 9361',async()=>{
+ const p=await pageFor();try{
+  await p.goto(base);await p.evaluate(()=>{const oldPoll=window.goPoll;window.goPoll=async id=>{const r=await oldPoll(id);if(r.data?.controllers)r.data.controllers.push({device:'vmhba2',model:'Invader',status:'unknown',catalogModel:'MegaRAID SAS 9361-8i',match:'identified'});return r;};});
+  await scan(p);assert.equal(await p.locator('#packageMatch').isVisible(),true);assert.equal(await p.locator('#help9361').isVisible(),true);
+  assert.match(await p.locator('#packageModel').innerText(),/9560-8i/);
+  assert.match(await p.locator('#help9361').innerText(),/пакет относится только к нему/i);
+ }finally{await p.close()}
+});
+
+
+test('9361 StorCLI inventory reports unknown and found without claiming compatibility',async()=>{
+ const p=await pageFor();try{
+  await p.goto(base);await p.evaluate(()=>{const oldPoll=window.goPoll;window.goPoll=async id=>{const r=await oldPoll(id);if(r.data?.controllers){
+   r.data.controllers=[{device:'vmhba2',status:'unknown',catalogModel:'MegaRAID SAS 9361-8i',match:'identified'}];r.data.candidate=null;
+   if(r.data.displayHost==='192.0.2.10'){r.data.vibInventoryKnown=false;r.data.vibs=[];}
+   else {r.data.vibInventoryKnown=true;r.data.vibs=[{name:'VMWARE-STORCLI64',version:'<img src=x onerror=alert(1)>'}];}
+  }return r;};});
+  await scan(p);assert.match(await p.locator('#storcli9361Inventory').innerText(),/наличие StorCLI неизвестно/);
+  await p.fill('#address','192.0.2.11');await p.fill('#password','fake-only');await p.click('#connectButton');await p.locator('#help9361').waitFor({state:'visible'});
+  assert.match(await p.locator('#storcli9361Inventory').innerText(),/VMWARE-STORCLI64/);assert.match(await p.locator('#storcli9361Inventory').innerText(),/совместимость не проверены/);
+  assert.equal(await p.locator('#storcli9361Inventory img').count(),0);
+ }finally{await p.close()}
+});

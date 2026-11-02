@@ -251,6 +251,12 @@ func (a *App) Link(kind string) (string, error) {
 		return inspect.OfficialGuide(), nil
 	case "broadcom":
 		return "https://www.broadcom.com/products/storage/raid-controllers", nil
+	case "9361-hcl":
+		return inspect.SAS9361HCL, nil
+	case "9361-downloads":
+		return inspect.SAS9361Downloads, nil
+	case "9361-package-readme":
+		return "https://docs.broadcom.com/docs/1232745888", nil
 	case "dell":
 		return "https://www.dell.com/support/home/", nil
 	case "hpe":

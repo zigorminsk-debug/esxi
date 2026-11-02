@@ -111,6 +111,13 @@ func Build(h *inspect.Host, b *bundle.Result, datastore, accessIP string) Report
 	add("Проверьте исходные данные", fmt.Sprintf("Хост %s (%s), ESXi %s, build %s. Сервер: %s %s. Адаптеры: %s. %s Версии firmware, состояние физических дисков, совместимость OEM и подпись пакета программой не подтверждены.", plain(h.DisplayHost), plain(h.Name), plain(h.Version), plain(h.Build), plain(h.Vendor), plain(h.Model), strings.Join(cards, "; "), secureBoot), false,
 		"vmware -vl", "esxcli storage core adapter list", "esxcli hardware pci list", "esxcli software acceptance get", "esxcli software vib list | grep -i lwmd")
 	add("Подготовьте сервер и резервные копии", "Проверьте резервные копии ВМ и конфигурации, сохраните конфигурацию RAID штатным средством производителя и убедитесь, что массив не degraded/rebuilding. Сверьте firmware, модель и PCI subsystem ID с README Broadcom или OEM. Запланируйте окно обслуживания и план отката. Программа не меняет сервер и не проверяла работоспособность резервных копий.", true)
+	for _, c := range h.Controllers {
+		if c.Match == "identified" && c.CatalogModel == "MegaRAID SAS 9361-8i" {
+			add("MegaRAID SAS 9361-8i: уточните пакет и состояние", "Полный PCI ID указывает на SAS3108 / 9361-8i; проверьте модель, firmware и OEM. README MR 7.38 не перечисляет этот контроллер, поэтому совместимый LWA и доступ на порт 35557 здесь не подтверждены. Если найден другой кандидат 95xx, он относится только к указанной модели, а не к 9361. Официальный HCL: "+inspect.SAS9361HCL+" ; загрузки модели: "+inspect.SAS9361Downloads+". Выберите в HCL точный ESXi и сверьте firmware и драйвер. Если на ESXi 8 уже установлен совместимый StorCLI64 по указанному пути, команда ниже только показывает общий обзор. Программа также может прочитать поддерживаемый JSON по SSH с отдельного разрешения; сам вход может попасть в системный журнал. Если утилита отсутствует или путь отличается — не устанавливайте произвольный пакет и не меняйте RAID; сверяйтесь с OEM. Состояние API unknown не означает ни неисправность, ни исправность массива.", true,
+				"/opt/storcli/bin/storcli64 show nolog")
+			break
+		}
+	}
 	if h.Candidate == nil {
 		add("Остановитесь: пакет не определён", plain(h.CandidateReason)+" Не устанавливайте случайный LSA/LWM. Найдите модель и совместимый пакет ESXi у производителя контроллера или OEM; для Dell PERC, HPE и Lenovo сначала сверяйтесь с их поддержкой. LWM предназначен для мониторинга и не является заменой LSA/LWA для управления.", true)
 		return finalize(r)

@@ -178,9 +178,13 @@
     const rows = $('controllerRows'); rows.replaceChildren();
     if (!controllers.length) { const tr = el('tr'); const td = el('td', '', 'Адаптеры не получены. Проверьте права доступа и PCI ID вручную.'); td.colSpan = 4; tr.append(td); rows.append(tr); }
     controllers.forEach(c => {
-      const tr = el('tr'); const model = el('td'); model.append(el('strong', '', c.catalogModel || c.model || 'Неизвестный адаптер'), el('small', '', `${c.device || 'HBA нет'} · ${c.status || 'статус неизвестен'}`)); if (c.oem) model.append(el('small', '', `${c.oem}: ${c.oemReason || 'сверьте производителя'}`));
+      const tr = el('tr'); const model = el('td');
+      const apiStatus = !c.status || c.status.toLowerCase() === 'unknown' ? 'статус API неизвестен' : `статус API: ${c.status}`;
+      model.append(el('strong', '', c.catalogModel || c.model || 'Неизвестный адаптер'), el('small', '', `${c.device || 'HBA нет'} · ${apiStatus}`));
+      if (c.match === 'identified') model.append(el('small', '', 'Модель по PCI ID; здоровье RAID не проверено'));
+      if (c.oem) model.append(el('small', '', `${c.oem}: ${c.oemReason || 'сверьте производителя'}`));
       const driver = el('td', '', c.driver || 'Нет данных'); const ids = el('td'); ids.append(el('strong', '', c.pci || 'PCI неизвестен'), el('small', '', c.vendor ? `${c.vendor}:${c.deviceId} / ${c.subVendor}:${c.subDevice}` : 'PCI ID не получены'));
-      const match = el('td'); match.append(el('span', `tag ${c.match === 'catalog' ? 'tag-blue' : 'tag-amber'}`, c.match === 'catalog' ? 'СОВПАДЕНИЕ' : c.match === 'oem' ? 'OEM: ПРОВЕРИТЬ' : 'НЕТ ДАННЫХ'));
+      const match = el('td'); match.append(el('span', `tag ${c.match === 'catalog' ? 'tag-blue' : 'tag-amber'}`, c.match === 'catalog' ? 'ПАКЕТ-КАНДИДАТ' : c.match === 'identified' ? 'МОДЕЛЬ ПО PCI' : c.match === 'oem' ? 'OEM: ПРОВЕРИТЬ' : 'НЕТ ДАННЫХ'));
       tr.append(model, driver, ids, match); rows.append(tr);
     });
     const cards = $('checks'); cards.replaceChildren();
@@ -189,6 +193,15 @@
   }
   function renderPackage(host) {
     hide('packageEmpty', true); hide('packageResult', false); $('consent').checked = false; $('downloadButton').disabled = true; hide('bundleInfo', true);
+    const has9361 = (host.controllers || []).some(c => c.match === 'identified' && c.catalogModel === 'MegaRAID SAS 9361-8i');
+    hide('help9361', !has9361);
+    if (has9361) {
+      // Presence of a VIB name alone proves neither the path nor compatibility.
+      // A failed/partial API read must never be described as absent software.
+      const utilities = (host.vibs || []).filter(v => ['storcli','vmware-storcli64','vmware-storcli'].includes((v.name || '').toLowerCase()));
+      const inventory = !host.vibInventoryKnown ? 'Список VIB не получен: наличие StorCLI неизвестно.' : utilities.length ? `В списке VIB найдены: ${utilities.slice(0,4).map(v => `${v.name} ${v.version || ''}`.trim()).join(', ')}. Путь и совместимость не проверены.` : 'В прочитанном списке VIB имена storcli / vmware-storcli64 / vmware-storcli не найдены. Это не исключает другую сборку или ручную установку.';
+      set('storcli9361Inventory', inventory);
+    }
     if (!host.candidate) { set('noMatchReason', (host.candidateReason || 'Для этого ESXi или полного PCI ID в каталоге нет точного совпадения.') + ' LWM не заменяет LSA для управления.'); hide('packageNoMatch', false); hide('packageMatch', true); return; }
     hide('packageNoMatch', true); hide('packageMatch', false);
     set('packageTitle', 'LSA для ESXi 8'); set('packageSubtitle', 'Light Weight Agent для доступа к управлению через ESXi'); set('packageModel', host.candidate.model); set('packageVersion', host.candidate.version);
@@ -268,6 +281,8 @@
     try { const data=await job(()=>window.goPortStart(),'Проверяем TCP и TLS без учётных данных…'); if(data){await renderDiagnostics();await loadHistory();toast('Проверка порта завершена');} }
     catch(e){toast(message(e));}
   });
+  $('copy9361').addEventListener('click',()=>copy('/opt/storcli/bin/storcli64 show nolog'));
+  $('read9361').addEventListener('click',()=>{ $('sshKind').value='storcli64'; $('sshDetails').open=true; navigate('raid'); });
   $('copyStorcli').addEventListener('click',()=>copy('/opt/lsi/storcli/storcli /call show all nolog J'));
   $('copyHpe').addEventListener('click',()=>copy('/opt/smartstorageadmin/ssacli/bin/ssacli ctrl all show config'));
   $('raidImport').addEventListener('click', async () => {
