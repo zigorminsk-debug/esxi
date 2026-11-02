@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/jchv/go-webview2/pkg/edge"
 	"github.com/zigorminsk-debug/esxi/raid-assistant/internal/runtimeinstaller"
@@ -107,11 +109,57 @@ func TestNativeProgressAndEmbeddedIcon(t *testing.T) {
 		t.Fatal("application icon resource 1 missing")
 	}
 	want := errors.New("work result")
-	err := runtimeProgress("download", func() error { return want })
+	err := runtimeProgress("download", func() error {
+		name, _ := syscall.UTF16PtrFromString("ESXi RAID Assistant — WebView2")
+		hwnd, _, _ := user32.NewProc("FindWindowW").Call(0, uintptr(unsafe.Pointer(name)))
+		visible, _, _ := user32.NewProc("IsWindowVisible").Call(hwnd)
+		if hwnd == 0 || visible == 0 {
+			return errors.New("native progress window is not visible")
+		}
+		return want
+	})
 	if !errors.Is(err, want) {
-		t.Fatalf("progress did not return worker error: %v", err)
+		t.Fatalf("progress did not show a window and return worker error: %v", err)
 	}
 }
+func TestProgressCompletionAfterWindowClosed(t *testing.T) {
+	done := make(chan error, 1)
+	go func() {
+		// Isolate this test's native message queue from other tests.
+		runtime.LockOSThread()
+		want := errors.New("worker finished")
+		err := runtimeProgress("download", func() error {
+			name, _ := syscall.UTF16PtrFromString("ESXi RAID Assistant — WebView2")
+			hwnd, _, _ := user32.NewProc("FindWindowW").Call(0, uintptr(unsafe.Pointer(name)))
+			if hwnd == 0 {
+				return errors.New("progress window missing")
+			}
+			user32.NewProc("PostMessageW").Call(hwnd, 0x10, 0, 0) // WM_CLOSE
+			until := time.Now().Add(2 * time.Second)
+			for time.Now().Before(until) {
+				if alive, _, _ := user32.NewProc("IsWindow").Call(hwnd); alive == 0 {
+					return want
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			return errors.New("progress window did not close")
+		})
+		if !errors.Is(err, want) {
+			done <- err
+			return
+		}
+		done <- nil
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("progress loop did not wake after its window was destroyed")
+	}
+}
+
 func TestStartupMessageIncludesHRESULTButNotPrivatePath(t *testing.T) {
 	text := webviewFailureText("123.4.5.6", &edge.HRESULTError{Operation: "get_Settings", Code: 0x80070005})
 	if !strings.Contains(text, "0x80070005") || !strings.Contains(text, "get_Settings") || !strings.Contains(text, "123.4.5.6") {

@@ -180,6 +180,17 @@ func runWindow(a *app.App) error {
 	smoke := os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") == "1"
 	smokeOK := false
 	if smoke {
+		// Check that the running window actually uses the embedded application
+		// icon, not just that the EXE contains an unused resource.
+		module, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
+		expected, _, _ := user32.NewProc("LoadImageW").Call(module, 1, 1, 0, 0, 0x40|0x8000)
+		big, _, _ := user32.NewProc("GetClassLongPtrW").Call(uintptr(w.Window()), ^uintptr(13))   // GCLP_HICON = -14
+		small, _, _ := user32.NewProc("GetClassLongPtrW").Call(uintptr(w.Window()), ^uintptr(33)) // GCLP_HICONSM = -34
+		if expected == 0 || big != expected || small == 0 {
+			selfTestTrace("application window icon check failed")
+			return errors.New("WebView2 window icon missing")
+		}
+		selfTestTrace("application window icons verified")
 		if err := w.Bind("goSmokeReady", func(valid bool, stage string) {
 			smokeOK = valid
 			selfTestTrace("smoke callback: " + stage)
