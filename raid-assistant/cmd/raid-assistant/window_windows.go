@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,8 +18,10 @@ import (
 	"unsafe"
 
 	"github.com/jchv/go-webview2"
+	"github.com/jchv/go-webview2/pkg/edge"
 	"github.com/zigorminsk-debug/esxi/raid-assistant/internal/app"
 	"github.com/zigorminsk-debug/esxi/raid-assistant/internal/frontend"
+	"github.com/zigorminsk-debug/esxi/raid-assistant/internal/runtimeinstaller"
 )
 
 var (
@@ -36,21 +39,47 @@ func alert(text string) {
 	messageBox.Call(0, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(caption)), 0x10)
 }
 
+func webviewFailureText(version string, err error) string {
+	detail := "Этап: создание окна WebView2."
+	var hr *edge.HRESULTError
+	if errors.As(err, &hr) {
+		detail = fmt.Sprintf("Этап: %s; код: 0x%08X.", hr.Operation, hr.Code)
+	} else if err != nil {
+		// Do not expose paths, user names, or arbitrary native error text.
+		for _, stage := range []string{"WebView2Loader", "CreateWindowExW", "SetTimer", "GetMessageW", "get_Settings", "QueryInterface Settings4", "password autosave", "general autofill", "WebView2 initialization timed out"} {
+			if strings.HasPrefix(err.Error(), stage) {
+				detail = "Этап: " + stage + "."
+				break
+			}
+		}
+	}
+	return "WebView2 Runtime найден (версия " + version + "), но окно не запустилось. Это не обязательно означает, что компонент отсутствует.\n\n" + detail + "\n\nЗакройте помощник и повторите запуск. Если ошибка повторится, проверьте доступ к папке пользователя и попробуйте восстановление WebView2 Runtime в настройках Windows. Пришлите снимок этого окна и версию Windows — без паролей."
+}
+
 func runWindow(a *app.App) error {
+	selfTestTrace("checking WebView2 Runtime")
+	version, err := ensureRuntime()
+	if err != nil {
+		selfTestTrace("Runtime check failed: " + err.Error())
+		if os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") != "1" && !errors.Is(err, runtimeinstaller.ErrDeclined) {
+			alert(runtimeFailureText(err))
+		}
+		return err
+	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		cache = os.TempDir()
 	}
 	dataPath := filepath.Join(cache, "ESXi-RAID-Assistant", "WebView2")
 	selfTestTrace("starting WebView2")
-	w := webview2.NewWithOptions(webview2.WebViewOptions{Debug: false, DataPath: dataPath, AutoFocus: true, WindowOptions: webview2.WindowOptions{Title: "ESXi RAID Assistant", Width: 1360, Height: 900, Center: true}})
+	w, err := webview2.NewWithOptionsError(webview2.WebViewOptions{Debug: false, DataPath: dataPath, AutoFocus: true, WindowOptions: webview2.WindowOptions{Title: "ESXi RAID Assistant", Width: 1360, Height: 900, Center: true, IconId: 1}})
 	selfTestTrace("WebView2 returned")
-	if w == nil {
-		selfTestTrace("WebView2 unavailable")
+	if err != nil {
+		selfTestTrace("WebView2 startup failed: " + err.Error())
 		if os.Getenv("ESXI_RAID_ASSISTANT_SELFTEST") != "1" {
-			alert("Не удалось открыть окно или отключить автозаполнение. Установите либо обновите Microsoft Edge WebView2 Runtime и повторите запуск.")
+			alert(webviewFailureText(version, err))
 		}
-		return errors.New("WebView2 недоступен")
+		return err
 	}
 	defer w.Destroy()
 	w.SetSize(760, 600, webview2.HintMin)

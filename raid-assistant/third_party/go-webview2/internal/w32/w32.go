@@ -28,6 +28,8 @@ var (
 	User32UpdateWindow       = user32.NewProc("UpdateWindow")
 	User32SetFocus           = user32.NewProc("SetFocus")
 	User32GetMessageW        = user32.NewProc("GetMessageW")
+	User32SetTimer           = user32.NewProc("SetTimer")
+	User32KillTimer          = user32.NewProc("KillTimer")
 	User32TranslateMessage   = user32.NewProc("TranslateMessage")
 	User32DispatchMessageW   = user32.NewProc("DispatchMessageW")
 	User32DefWindowProcW     = user32.NewProc("DefWindowProcW")
@@ -89,6 +91,7 @@ const (
 	WMSize          = 0x0005
 	WMActivate      = 0x0006
 	WMClose         = 0x0010
+	WMTimer         = 0x0113
 	WMQuit          = 0x0012
 	WMGetMinMaxInfo = 0x0024
 	WMNCLButtonDown = 0x00A1

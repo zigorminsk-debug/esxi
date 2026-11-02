@@ -101,6 +101,16 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 
+// Accept only an unambiguous password prompt; no OTP/MFA/pin answers.
+func passwordPrompt(question string) bool {
+	q := strings.ToLower(strings.TrimSpace(question))
+	if strings.Contains(q, "otp") || strings.Contains(q, "verification") || strings.Contains(q, "однораз") || strings.Contains(q, "code") || strings.Contains(q, "код") {
+		return false
+	}
+	return q == "password:" || q == "password" || q == "пароль:" || q == "пароль" ||
+		(strings.HasPrefix(q, "password for ") && strings.HasSuffix(q, ":") && len(q) <= 160)
+}
+
 func Read(ctx context.Context, hostport string, req Request) (*raid.Snapshot, error) {
 	list := Commands(req.Kind)
 	if len(list) == 0 || !validHostPort(hostport) {
@@ -117,15 +127,52 @@ func Read(ctx context.Context, hostport string, req Request) (*raid.Snapshot, er
 	stop := closeOnCancel(ctx, conn)
 	defer stop()
 	setDeadline(ctx, conn, 35*time.Second)
-	cfg := &ssh.ClientConfig{User: req.User, Auth: []ssh.AuthMethod{ssh.Password(req.Password)}, HostKeyCallback: func(_ string, _ net.Addr, k ssh.PublicKey) error {
+	var keyMatched, keyMismatch, passwordSent, unsupportedChallenge bool
+	cfg := &ssh.ClientConfig{User: req.User, Auth: []ssh.AuthMethod{
+		ssh.PasswordCallback(func() (string, error) {
+			passwordSent = true
+			return req.Password, nil
+		}),
+		// Some ESXi SSH configurations offer a single password through PAM
+		// keyboard-interactive only. Never send the password to a visible,
+		// multi-question, OTP, or second challenge; never retry a rejected
+		// password with another method and risk locking the account.
+		ssh.KeyboardInteractive(func(_, _ string, questions []string, echo []bool) ([]string, error) {
+			if len(questions) == 0 && len(echo) == 0 {
+				return []string{}, nil
+			}
+			if passwordSent {
+				return nil, errors.New("password already attempted")
+			}
+			if len(questions) != 1 || len(echo) != 1 || echo[0] || !passwordPrompt(questions[0]) {
+				unsupportedChallenge = true
+				return nil, errors.New("unsupported SSH authentication challenge")
+			}
+			passwordSent = true
+			return []string{req.Password}, nil
+		}),
+	}, HostKeyCallback: func(_ string, _ net.Addr, k ssh.PublicKey) error {
 		if ssh.FingerprintSHA256(k) != req.Fingerprint {
+			keyMismatch = true
 			return errors.New("SSH host key mismatch")
 		}
+		keyMatched = true
 		return nil
 	}, Timeout: 8 * time.Second}
 	cc, ch, requests, e := ssh.NewClientConn(conn, hostport, cfg)
 	if e != nil {
-		return nil, errors.New("SSH-вход не выполнен или ключ сервера изменился. Сверьте host key и учётные данные")
+		switch {
+		case keyMismatch:
+			return nil, errors.New("SSH-ключ сервера изменился или не совпадает. Пароль не отправлен. Получите ключ заново и независимо сверьте его с консолью сервера; не продолжайте при неожиданной смене")
+		case !keyMatched:
+			return nil, errors.New("SSH-соединение прервалось до проверки ключа. Пароль не отправлен. Проверьте службу SSH, сеть и совместимость алгоритмов")
+		case unsupportedChallenge:
+			return nil, errors.New("Сервер запросил неподдерживаемый способ SSH-входа или дополнительный код. Программа не отвечает на такие запросы; проверьте настройки доступа у администратора")
+		case passwordSent:
+			return nil, errors.New("Попытка SSH-входа не выполнена. Проверьте SSH-логин и пароль, разрешение SSH-входа и блокировку учётной записи. Не повторяйте попытку много раз подряд")
+		default:
+			return nil, errors.New("Сервер не принял доступный способ SSH-входа. Проверьте, разрешён ли вход с паролем для этой учётной записи")
+		}
 	}
 	client := ssh.NewClient(cc, ch, requests)
 	defer client.Close()

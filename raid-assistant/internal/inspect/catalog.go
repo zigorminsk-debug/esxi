@@ -108,6 +108,14 @@ func CandidateReason(version string, controllers []Controller) string {
 			return fmt.Sprintf("PCI ID соответствует %s, но активный HBA с драйвером не подтверждён: адаптер %s, драйвер %s, состояние %s. Проверьте драйвер и passthrough на хосте.", c.CatalogModel, knownOr(c.Device), knownOr(c.Driver), knownOr(c.Status))
 		}
 	}
+	// A generic OEM AHCI function can precede the actual RAID controller.
+	// Prefer a model/driver-confirmed HPE Smart Array rather than reporting
+	// the unrelated AHCI subsystem as if it were the RAID controller.
+	for _, c := range controllers {
+		if c.Match == "oem" && c.OEM == "HPE Smart Array" {
+			return fmt.Sprintf("Обнаружен %s (%s, PCI %s:%s / %s:%s). Розничный LSA Broadcom не выбран. Для HPE проверьте SSA/SSACLI и совместимость точной модели с версией ESXi.", knownOr(c.Model), knownOr(c.Device), knownOr(c.Vendor), knownOr(c.DeviceID), knownOr(c.SubVendor), knownOr(c.SubDevice))
+		}
+	}
 	for _, c := range controllers {
 		if c.Match == "oem" {
 			return fmt.Sprintf("Обнаружен OEM subsystem ID %s:%s; розничный пакет Broadcom не считается подтверждённым. Сверьте пакет у производителя сервера.", knownOr(c.SubVendor), knownOr(c.SubDevice))

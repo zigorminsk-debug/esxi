@@ -209,6 +209,17 @@ test('SSH requires matching host key and explicit consent; monitor keeps no pass
  }finally{await p.close()}
 });
 
+test('SSH failures stay next to the form and clear the password',async()=>{
+ const p=await pageFor();try{
+  await p.goto(base);await scan(p);await p.locator('#sshDetails summary').click();await p.click('#sshKeyButton');await p.locator('#sshKeyPanel').waitFor({state:'visible'});
+  await p.fill('#sshUser','root');await p.fill('#sshPassword','temporary-test-only');await p.fill('#sshPin','SHA256:DEMO_ONLY_NOT_A_REAL_HOST_KEY');await p.check('#sshConsent');
+  await p.evaluate(()=>{window.goSSHReadStart=async()=>{throw new Error('Тест: SSH-вход отклонён');};});
+  await p.click('#sshRead');await p.waitForFunction(()=>document.querySelector('#sshStatus').textContent.includes('отклонён'));
+  assert.match(await p.locator('#sshStatus').innerText(),/SSH-вход отклонён/);assert.equal(await p.locator('#sshPassword').inputValue(),'');
+  await p.evaluate(()=>{document.querySelector('#toast').hidden=true;});assert.equal(await p.locator('#sshStatus').isVisible(),true);
+ }finally{await p.close()}
+});
+
 test('saved profiles do not persist passwords; catalog, wizard, and screenshots are usable',async()=>{
  const p=await pageFor();try{
   const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(base);

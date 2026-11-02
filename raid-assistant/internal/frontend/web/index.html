@@ -22,7 +22,7 @@
       <button class="nav-item" data-nav="extensions"><span class="nav-number">07</span><span>Расширения ESXi<small>Каталог компонентов</small></span></button>
     </nav>
     <div class="sidebar-foot"><span class="side-lock">◎</span><div><strong>Только чтение</strong><p>Никаких изменений на сервере без вас.</p></div></div>
-    <div class="side-version">ESXi 8.x <span>•</span> v0.2.1</div>
+    <div class="side-version">ESXi 8.x <span>•</span> v0.2.2</div>
   </aside>
   <main class="main" id="top">
     <header class="topbar"><div class="crumb"><span>УТИЛИТЫ</span><b>/</b><strong>RAID Assistant</strong></div><div class="top-actions"><div class="font-control" aria-label="Размер текста"><button id="fontMinus" title="Уменьшить шрифт" aria-label="Уменьшить шрифт">А−</button><button id="fontPlus" title="Увеличить шрифт" aria-label="Увеличить шрифт">А+</button></div><span class="top-readonly"><span></span> БЕЗ ИЗМЕНЕНИЙ</span></div></header>
@@ -63,7 +63,7 @@
           <div class="action-row"><button id="sshKeyButton" class="button secondary" type="button">1. Получить SSH host key</button></div>
           <div id="sshKeyPanel" class="ssh-key" hidden><p>Ключ <strong id="sshKeyAlgorithm"></strong>: <code id="sshKeyFingerprint"></code></p><p>Сверьте этот SHA-256 через независимую консоль сервера / iLO / iDRAC. SSH-ключ — <strong>не</strong> TLS-сертификат порта 443. Например, сравните отпечаток соответствующего публичного файла <code>/etc/ssh/ssh_host_*_key.pub</code> командой <code>ssh-keygen -lf ИМЯ_ФАЙЛА -E sha256</code>.</p><label class="field"><span>Независимо проверенный SSH SHA256</span><input id="sshPin" placeholder="SHA256:…" spellcheck="false" autocomplete="off"></label></div>
           <label class="consent"><input type="checkbox" id="sshConsent"><span>Разрешаю подключиться по SSH к выбранному хосту и выполнить только указанные встроенные команды просмотра. Ключ я сверил независимо.</span></label>
-          <button id="sshRead" class="button primary" type="button">2. Прочитать RAID по SSH <span>→</span></button><p class="subtle">Пароль очищается из поля после запроса. Для непрерывного мониторинга он остаётся только в памяти до остановки мониторинга/закрытия программы.</p></div>
+          <button id="sshRead" class="button primary" type="button">2. Прочитать RAID по SSH <span>→</span></button><div id="sshStatus" class="connection-status" role="status" aria-live="polite">Для чтения проверьте ключ и заполните поля выше.</div><p class="subtle">Пароль очищается из поля после запроса. Для непрерывного мониторинга он остаётся только в памяти до остановки мониторинга/закрытия программы.</p></div>
         </details>
         <div id="raidResult" class="panel inner-panel" hidden><div class="panel-heading"><div><h3>Результат отчёта RAID</h3><p id="raidMeta"></p></div><span class="tag tag-amber" id="raidSeverity">СНИМОК</span></div><div id="raidWarnings" class="warning-box"></div><div id="raidTables"></div>
           <div class="relation-controls"><h3>Связь с хранилищами и ВМ</h3><p>Сопоставление только по полному совпадению NAA логического диска с VMFS extent. Прочие типы хранилищ и недоступные данные не входят.</p><label class="consent"><input type="checkbox" id="reportHostConfirmed"><span>Я проверил, что импортированный отчёт актуален и относится к выбранному ESXi.</span></label><button class="button secondary" id="correlate" type="button">Показать совпадения RAID → datastore → ВМ</button><div id="relationsResult" class="relation-result" aria-live="polite"></div></div>

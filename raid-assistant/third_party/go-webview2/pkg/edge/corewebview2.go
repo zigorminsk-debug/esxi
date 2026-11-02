@@ -4,6 +4,7 @@
 package edge
 
 import (
+	"fmt"
 	"log"
 	"runtime"
 	"unsafe"
@@ -14,12 +15,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+var comInitializationError error
+
 func init() {
 	runtime.LockOSThread()
 
 	r, _, _ := w32.Ole32CoInitializeEx.Call(0, 2)
-	if int(r) < 0 {
-		log.Printf("Warning: CoInitializeEx call failed: E=%08x", r)
+	if err := checkHRESULT("CoInitializeEx", r); err != nil {
+		comInitializationError = err
+		log.Printf("Warning: %v", err)
 	}
 }
 
@@ -139,14 +143,16 @@ type ICoreWebView2 struct {
 }
 
 func (i *ICoreWebView2) GetSettings() (*ICoreWebViewSettings, error) {
-	var err error
 	var settings *ICoreWebViewSettings
-	_, _, err = i.vtbl.GetSettings.Call(
+	hr, _, _ := i.vtbl.GetSettings.Call(
 		uintptr(unsafe.Pointer(i)),
 		uintptr(unsafe.Pointer(&settings)),
 	)
-	if err != windows.ERROR_SUCCESS {
+	if err := checkHRESULT("get_Settings", hr); err != nil {
 		return nil, err
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("get_Settings: empty COM result")
 	}
 	return settings, nil
 }

@@ -75,3 +75,14 @@ func TestSharedSmartPQIDriverDoesNotClaimHPE(t *testing.T) {
 		t.Fatalf("model-based classification lost: %+v", c)
 	}
 }
+
+func TestCandidateReasonPrefersSmartArrayOverHPESubsystemAHCI(t *testing.T) {
+	ahci := Controller{Model: "Intel AHCI", Device: "vmhba1", Vendor: "8086", DeviceID: "1d02", SubVendor: "103c", SubDevice: "18a9", Driver: "vmw_ahci"}
+	p420 := Controller{Model: "Smart Array P420i", Device: "vmhba0", Vendor: "103c", DeviceID: "323b", SubVendor: "103c", SubDevice: "3354", Driver: "nhpsa"}
+	CatalogMatch(&ahci)
+	CatalogMatch(&p420)
+	r := CandidateReason("8.0.3", []Controller{ahci, p420})
+	if !strings.Contains(r, "P420i") || !strings.Contains(r, "3354") || strings.Contains(r, "18a9") || !strings.Contains(r, "совместимость") {
+		t.Fatalf("incorrect controller or overconfident recommendation: %s", r)
+	}
+}

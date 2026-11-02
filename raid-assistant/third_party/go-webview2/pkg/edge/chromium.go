@@ -5,6 +5,7 @@ package edge
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -38,6 +39,8 @@ type Chromium struct {
 	controller             *ICoreWebView2Controller
 	webview                *ICoreWebView2
 	inited                 uintptr
+	initAborted            uint32
+	initErr                error
 	envCompleted           *iCoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
 	controllerCompleted    *iCoreWebView2CreateCoreWebView2ControllerCompletedHandler
 	webMessageReceived     *iCoreWebView2WebMessageReceivedEventHandler
@@ -95,50 +98,94 @@ func NewChromium() *Chromium {
 	return e
 }
 
-func (e *Chromium) Embed(hwnd uintptr) bool {
+// Embed retains the upstream bool API; EmbedWithError preserves diagnostics.
+func (e *Chromium) Embed(hwnd uintptr) bool { return e.EmbedWithError(hwnd) == nil }
+
+func (e *Chromium) abortInit(err error) {
+	e.initErr = err
+	atomic.StoreUint32(&e.initAborted, 1)
+	atomic.StoreUintptr(&e.inited, 1)
+}
+
+func (e *Chromium) EmbedWithError(hwnd uintptr) error {
 	RaidTrace("Embed started")
 	e.hwnd = hwnd
-
+	if comInitializationError != nil {
+		return comInitializationError
+	}
 	dataPath := e.DataPath
 	if dataPath == "" {
 		currentExePath := make([]uint16, windows.MAX_PATH)
 		_, err := windows.GetModuleFileName(windows.Handle(0), &currentExePath[0], windows.MAX_PATH)
 		if err != nil {
-			// What to do here?
-			return false
+			return fmt.Errorf("GetModuleFileName: %w", err)
 		}
 		currentExeName := filepath.Base(windows.UTF16ToString(currentExePath))
 		dataPath = filepath.Join(os.Getenv("AppData"), currentExeName)
 	}
-
-	RaidTrace("calling WebView2Loader")
-	res, err := createCoreWebView2EnvironmentWithOptions(nil, windows.StringToUTF16Ptr(dataPath), 0, e.envCompleted)
-	RaidTrace(fmt.Sprintf("WebView2Loader returned result=%x err=%v", res, err))
+	dataPath16, err := windows.UTF16PtrFromString(dataPath)
 	if err != nil {
-		log.Printf("Error calling Webview2Loader: %v", err)
-		return false
-	} else if res != 0 {
-		log.Printf("Result: %08x", res)
-		return false
+		return errors.New("invalid WebView2 data folder")
 	}
+	RaidTrace("calling WebView2Loader")
+	res, err := createCoreWebView2EnvironmentWithOptions(nil, dataPath16, 0, e.envCompleted)
+	RaidTrace(fmt.Sprintf("WebView2Loader result=%08X", uint32(res)))
+	if err != nil {
+		return fmt.Errorf("WebView2Loader: %w", err)
+	}
+	if err := checkHRESULT("CreateCoreWebView2EnvironmentWithOptions", res); err != nil {
+		return err
+	}
+
+	// GetMessageW otherwise waits forever if a broken runtime never invokes
+	// its callback. A window timer wakes this same STA thread after 45s.
+	const timerID = 0x7351
+	timer, _, timerErr := w32.User32SetTimer.Call(hwnd, timerID, 45000, 0)
+	if timer == 0 {
+		e.abortInit(fmt.Errorf("SetTimer: %w", timerErr))
+		return e.initErr
+	}
+	defer w32.User32KillTimer.Call(hwnd, timer)
 	var msg w32.Msg
-	for {
-		if atomic.LoadUintptr(&e.inited) != 0 {
+	for atomic.LoadUintptr(&e.inited) == 0 {
+		r, _, getErr := w32.User32GetMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
+		if r == 0 {
+			e.abortInit(errors.New("window closed during WebView2 initialization"))
 			break
 		}
-		r, _, _ := w32.User32GetMessageW.Call(
-			uintptr(unsafe.Pointer(&msg)),
-			0,
-			0,
-			0,
-		)
-		if r == 0 {
+		if int32(uint32(r)) == -1 {
+			e.abortInit(fmt.Errorf("GetMessageW: %w", getErr))
+			break
+		}
+		if msg.Message == w32.WMTimer && msg.WParam == timer && uintptr(msg.Hwnd) == hwnd {
+			e.abortInit(errors.New("WebView2 initialization timed out"))
 			break
 		}
 		_, _, _ = w32.User32TranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		_, _, _ = w32.User32DispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 	}
-	return true
+	return e.initErr
+}
+
+// CloseFailedInitialization keeps handlers alive until process exit but
+// releases any COM objects created before the failure, on the owning thread.
+func (e *Chromium) CloseFailedInitialization() {
+	atomic.StoreUint32(&e.initAborted, 1)
+	if e.controller != nil {
+		e.controller.vtbl.Close.Call(uintptr(unsafe.Pointer(e.controller)))
+	}
+	if e.webview != nil {
+		e.webview.vtbl.Release.Call(uintptr(unsafe.Pointer(e.webview)))
+		e.webview = nil
+	}
+	if e.controller != nil {
+		e.controller.vtbl.Release.Call(uintptr(unsafe.Pointer(e.controller)))
+		e.controller = nil
+	}
+	if e.environment != nil {
+		e.environment.vtbl.Release.Call(uintptr(unsafe.Pointer(e.environment)))
+		e.environment = nil
+	}
 }
 
 func (e *Chromium) Navigate(url string) {
@@ -203,77 +250,84 @@ func (e *Chromium) Release() uintptr {
 }
 
 func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environment) uintptr {
-	RaidTrace(fmt.Sprintf("environment callback result %x", res))
-	if int64(res) < 0 {
-		log.Fatalf("Creating environment failed with %08x", res)
+	RaidTrace(fmt.Sprintf("environment callback result %08X", uint32(res)))
+	if atomic.LoadUint32(&e.initAborted) != 0 {
+		return 0
+	}
+	if err := checkHRESULT("WebView2 environment callback", res); err != nil {
+		e.abortInit(err)
+		return 0
+	}
+	if env == nil {
+		e.abortInit(errors.New("WebView2 environment callback: empty COM result"))
+		return 0
 	}
 	_, _, _ = env.vtbl.AddRef.Call(uintptr(unsafe.Pointer(env)))
 	e.environment = env
 
-	_, _, _ = env.vtbl.CreateCoreWebView2Controller.Call(
-		uintptr(unsafe.Pointer(env)),
-		e.hwnd,
-		uintptr(unsafe.Pointer(e.controllerCompleted)),
+	hr, _, _ := env.vtbl.CreateCoreWebView2Controller.Call(
+		uintptr(unsafe.Pointer(env)), e.hwnd, uintptr(unsafe.Pointer(e.controllerCompleted)),
 	)
+	if err := checkHRESULT("CreateCoreWebView2Controller", hr); err != nil {
+		e.abortInit(err)
+	}
 	return 0
 }
 
 func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller *ICoreWebView2Controller) uintptr {
-	RaidTrace(fmt.Sprintf("controller callback result %x", res))
-	if int64(res) < 0 {
-		log.Fatalf("Creating controller failed with %08x", res)
+	RaidTrace(fmt.Sprintf("controller callback result %08X", uint32(res)))
+	if atomic.LoadUint32(&e.initAborted) != 0 {
+		return 0
+	}
+	if err := checkHRESULT("WebView2 controller callback", res); err != nil {
+		e.abortInit(err)
+		return 0
+	}
+	if controller == nil {
+		e.abortInit(errors.New("WebView2 controller callback: empty COM result"))
+		return 0
 	}
 	_, _, _ = controller.vtbl.AddRef.Call(uintptr(unsafe.Pointer(controller)))
 	e.controller = controller
 
+	hr, _, _ := controller.vtbl.GetCoreWebView2.Call(uintptr(unsafe.Pointer(controller)), uintptr(unsafe.Pointer(&e.webview)))
+	if err := checkHRESULT("get_CoreWebView2", hr); err != nil {
+		e.abortInit(err)
+		return 0
+	}
+	if e.webview == nil {
+		e.abortInit(errors.New("get_CoreWebView2: empty COM result"))
+		return 0
+	}
+	// get_CoreWebView2 returns an owned reference. Require the navigation and
+	// message handlers to be registered before any application HTML loads.
 	var token _EventRegistrationToken
-	_, _, _ = controller.vtbl.GetCoreWebView2.Call(
-		uintptr(unsafe.Pointer(controller)),
-		uintptr(unsafe.Pointer(&e.webview)),
-	)
-	_, _, _ = e.webview.vtbl.AddRef.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-	)
-	// Only the exact embedded document (plus a blank page) may navigate.
-	_, _, _ = e.webview.vtbl.AddNavigationStarting.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.raidNavigationStarting)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	_, _, _ = e.webview.vtbl.AddFrameNavigationStarting.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.raidNavigationStarting)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	_, _, _ = e.webview.vtbl.AddWebMessageReceived.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.webMessageReceived)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	_, _, _ = e.webview.vtbl.AddPermissionRequested.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.permissionRequested)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	_, _, _ = e.webview.vtbl.AddWebResourceRequested.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.webResourceRequested)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	_, _, _ = e.webview.vtbl.AddNavigationCompleted.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.navigationCompleted)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-
-	_ = e.controller.AddAcceleratorKeyPressed(e.acceleratorKeyPressed, &token)
-
+	for _, event := range []struct {
+		name    string
+		proc    ComProc
+		handler unsafe.Pointer
+	}{
+		{"add_NavigationStarting", e.webview.vtbl.AddNavigationStarting, unsafe.Pointer(e.raidNavigationStarting)},
+		{"add_FrameNavigationStarting", e.webview.vtbl.AddFrameNavigationStarting, unsafe.Pointer(e.raidNavigationStarting)},
+		{"add_WebMessageReceived", e.webview.vtbl.AddWebMessageReceived, unsafe.Pointer(e.webMessageReceived)},
+		{"add_PermissionRequested", e.webview.vtbl.AddPermissionRequested, unsafe.Pointer(e.permissionRequested)},
+		{"add_WebResourceRequested", e.webview.vtbl.AddWebResourceRequested, unsafe.Pointer(e.webResourceRequested)},
+		{"add_NavigationCompleted", e.webview.vtbl.AddNavigationCompleted, unsafe.Pointer(e.navigationCompleted)},
+	} {
+		hr, _, _ = event.proc.Call(uintptr(unsafe.Pointer(e.webview)), uintptr(event.handler), uintptr(unsafe.Pointer(&token)))
+		if err := checkHRESULT(event.name, hr); err != nil {
+			e.abortInit(err)
+			return 0
+		}
+	}
+	if err := e.controller.AddAcceleratorKeyPressed(e.acceleratorKeyPressed, &token); err != nil {
+		e.abortInit(err)
+		return 0
+	}
 	atomic.StoreUintptr(&e.inited, 1)
-
 	if e.focusOnInit {
 		e.Focus()
 	}
-
 	return 0
 }
 
@@ -317,10 +371,15 @@ func (e *Chromium) SetGlobalPermission(state CoreWebView2PermissionState) {
 
 func (e *Chromium) PermissionRequested(_ *ICoreWebView2, args *iCoreWebView2PermissionRequestedEventArgs) uintptr {
 	var kind CoreWebView2PermissionKind
-	_, _, _ = args.vtbl.GetPermissionKind.Call(
+	hr, _, _ := args.vtbl.GetPermissionKind.Call(
 		uintptr(unsafe.Pointer(args)),
-		uintptr(kind),
+		uintptr(unsafe.Pointer(&kind)),
 	)
+	if hresultFailed(hr) {
+		// Fail closed rather than treating an unknown permission as approved.
+		args.vtbl.PutState.Call(uintptr(unsafe.Pointer(args)), uintptr(CoreWebView2PermissionStateDeny))
+		return 0
+	}
 	var result CoreWebView2PermissionState
 	if e.globalPermission != nil {
 		result = *e.globalPermission

@@ -1,7 +1,7 @@
 {
   "name": "esxi-raid-assistant-ui-tests",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "scripts": {"test:ui": "node --test tests/ui.test.cjs"},
   "devDependencies": {"playwright": "1.56.1"}
 }

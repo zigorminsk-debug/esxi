@@ -76,7 +76,7 @@
   window.goMonitorStop=async()=>{monitoring={...monitoring,running:false,snapshot:null,sequence:0,alertSequence:0};return monitoring;};
   window.goHistory=async()=>history;
   window.goHistoryClear=async()=>{history=[];};
-  window.goUpdateStart=async()=>start({current:'0.2.1',latest:'0.2.1',available:false,note:'ДЕМО: GitHub не запрашивался.'});
+  window.goUpdateStart=async()=>start({current:'0.2.2',latest:'0.2.2',available:false,note:'ДЕМО: GitHub не запрашивался.'});
   window.goScreenshotLoad=async()=>null;
   window.goScreenshotImport=async()=>{throw new Error('В демо-режиме файл не импортируется');};
   window.goScreenshotClear=async()=>{};

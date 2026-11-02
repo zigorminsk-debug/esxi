@@ -6,6 +6,7 @@ package webview2
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"reflect"
 	"strconv"
@@ -37,7 +38,7 @@ func setWindowContext(wnd uintptr, data interface{}) {
 }
 
 type browser interface {
-	Embed(hwnd uintptr) bool
+	EmbedWithError(hwnd uintptr) error
 	Resize()
 	Navigate(url string)
 	NavigateToString(htmlContent string)
@@ -97,6 +98,13 @@ func NewWindow(debug bool, window unsafe.Pointer) WebView {
 
 // NewWithOptions creates a new webview using the provided options.
 func NewWithOptions(options WebViewOptions) WebView {
+	w, _ := NewWithOptionsError(options)
+	return w
+}
+
+// NewWithOptionsError distinguishes window, Runtime, COM and Settings4 errors.
+// A failed startup never leaves a blank window or loads the credential form.
+func NewWithOptionsError(options WebViewOptions) (WebView, error) {
 	edge.RaidTrace("NewWithOptions entered")
 	w := &webview{}
 	w.bindings = map[string]interface{}{}
@@ -109,36 +117,41 @@ func NewWithOptions(options WebViewOptions) WebView {
 	chromium.MessageCallback = w.msgcb
 	chromium.DataPath = options.DataPath
 	chromium.SetPermission(edge.CoreWebView2PermissionKindClipboardRead, edge.CoreWebView2PermissionStateDeny)
-
 	w.browser = chromium
 	w.mainthread, _, _ = w32.Kernel32GetCurrentThreadID.Call()
+
+	failed := func(err error) (WebView, error) {
+		chromium.CloseFailedInitialization()
+		if w.hwnd != 0 {
+			// Posting WM_CLOSE is not enough: there is no message loop after a
+			// failed constructor, so destroy the white window synchronously.
+			w32.User32DestroyWindow.Call(w.hwnd)
+		}
+		// Keep the handler reachable if WebView2 delivers a late callback
+		// while the failure dialog is being displayed.
+		return nil, err
+	}
 	edge.RaidTrace("creating Win32 window")
-	if !w.CreateWithOptions(options.WindowOptions) {
-		return nil
+	if err := w.createWithOptions(options.WindowOptions); err != nil {
+		return failed(err)
 	}
 
 	settings, err := chromium.GetSettings()
-	if err != nil || settings == nil {
-		edge.RaidTrace("WebView2 settings unavailable")
-		w.Destroy()
-		return nil
+	if err != nil {
+		return failed(err)
 	}
-	// The app contains ESXi credentials: fail closed if the runtime cannot
-	// disable password autosaving and generic form autofill before loading HTML.
+	defer settings.Release()
+	// Never weaken this check for the credential form, even on old runtimes.
 	if err := settings.DisableAutofill(); err != nil {
-		edge.RaidTrace("WebView2 autofill controls unavailable")
-		w.Destroy()
-		return nil
+		return failed(err)
 	}
 	if err := settings.PutAreDefaultContextMenusEnabled(options.Debug); err != nil {
-		w.Destroy()
-		return nil
+		return failed(err)
 	}
 	if err := settings.PutAreDevToolsEnabled(options.Debug); err != nil {
-		w.Destroy()
-		return nil
+		return failed(err)
 	}
-	return w
+	return w, nil
 }
 
 type rpcMessage struct {
@@ -280,6 +293,10 @@ func (w *webview) Create(debug bool, window unsafe.Pointer) bool {
 }
 
 func (w *webview) CreateWithOptions(opts WindowOptions) bool {
+	return w.createWithOptions(opts) == nil
+}
+
+func (w *webview) createWithOptions(opts WindowOptions) error {
 	edge.RaidTrace("CreateWithOptions entered")
 	var hinstance windows.Handle
 	_ = windows.GetModuleHandleEx(0, nil, &hinstance)
@@ -294,13 +311,22 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		icon, _, _ = w32.User32LoadImageW.Call(uintptr(hinstance), uintptr(opts.IconId), 1, 0, 0, w32.LR_DEFAULTSIZE|w32.LR_SHARED)
 	}
 
+	iconSmall := icon
+	if opts.IconId != 0 {
+		// Ask Windows to select the small image from the same multi-size group.
+		sx, _, _ := w32.User32GetSystemMetrics.Call(49) // SM_CXSMICON
+		sy, _, _ := w32.User32GetSystemMetrics.Call(50) // SM_CYSMICON
+		if small, _, _ := w32.User32LoadImageW.Call(uintptr(hinstance), uintptr(opts.IconId), 1, sx, sy, w32.LR_SHARED); small != 0 {
+			iconSmall = small
+		}
+	}
 	className, _ := windows.UTF16PtrFromString("webview")
 	wc := w32.WndClassExW{
 		CbSize:        uint32(unsafe.Sizeof(w32.WndClassExW{})),
 		HInstance:     hinstance,
 		LpszClassName: className,
 		HIcon:         windows.Handle(icon),
-		HIconSm:       windows.Handle(icon),
+		HIconSm:       windows.Handle(iconSmall),
 		LpfnWndProc:   windows.NewCallback(wndproc),
 	}
 	_, _, _ = w32.User32RegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
@@ -337,7 +363,8 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 	}
 
 	edge.RaidTrace("calling CreateWindowExW")
-	w.hwnd, _, _ = w32.User32CreateWindowExW.Call(
+	var windowErr error
+	w.hwnd, _, windowErr = w32.User32CreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(windowName)),
@@ -352,6 +379,9 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 		0,
 	)
 	edge.RaidTrace("CreateWindowExW returned")
+	if w.hwnd == 0 {
+		return fmt.Errorf("CreateWindowExW: %w", windowErr)
+	}
 	setWindowContext(w.hwnd, w)
 
 	_, _, _ = w32.User32ShowWindow.Call(w.hwnd, w32.SWShow)
@@ -359,11 +389,11 @@ func (w *webview) CreateWithOptions(opts WindowOptions) bool {
 	_, _, _ = w32.User32SetFocus.Call(w.hwnd)
 
 	edge.RaidTrace("embedding WebView2")
-	if !w.browser.Embed(w.hwnd) {
-		return false
+	if err := w.browser.EmbedWithError(w.hwnd); err != nil {
+		return err
 	}
 	w.browser.Resize()
-	return true
+	return nil
 }
 
 func (w *webview) Destroy() {

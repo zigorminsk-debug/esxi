@@ -48,6 +48,9 @@
     const box = $('connectionStatus'); box.textContent = text; box.className = `connection-status ${kind}`.trim();
     if (reveal) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+  function sshStatus(text, kind = '') {
+    const box = $('sshStatus'); box.textContent = text; box.className = `connection-status ${kind}`.trim();
+  }
   function confirmUnverified(reason, unverified) {
     return new Promise(resolve => {
       const dialog = $('securityDialog'), cancel = $('securityCancel'), proceed = $('securityContinue');
@@ -79,7 +82,7 @@
   $('fontPlus').addEventListener('click', () => fontScale(.1)); $('fontMinus').addEventListener('click', () => fontScale(-.1));
   function resetResults() {
     state.host = null; state.bundle = null; state.report = null; state.snapshot = null; state.sshKey = null; state.monitorSeq = 0; state.alertSeq = 0;
-    $('sshPassword').value = ''; $('sshPin').value = ''; $('sshConsent').checked = false; hide('sshKeyPanel', true); hide('raidResult', true); hide('diagnosticWizard', true); $('relationsResult').replaceChildren();
+    $('sshPassword').value = ''; $('sshPin').value = ''; $('sshConsent').checked = false; sshStatus('Для чтения проверьте ключ и заполните поля выше.'); hide('sshKeyPanel', true); hide('raidResult', true); hide('diagnosticWizard', true); $('relationsResult').replaceChildren();
     hide('diagnosticEmpty', false); hide('diagnosticResult', true);
     hide('packageEmpty', false); hide('packageResult', true);
     hide('reportEmpty', false); hide('reportResult', true);
@@ -272,9 +275,9 @@
     catch(e){toast(message(e));}
   });
   $('sshKeyButton').addEventListener('click', async () => {
-    try { state.sshKey=null;hide('sshKeyPanel',true);$('sshPin').value='';$('sshConsent').checked=false;
-      const data=await job(()=>window.goSSHKeyStart(),'Получаем SSH host key без пароля…'); if(!data)return;state.sshKey=data;set('sshKeyAlgorithm',data.algorithm);set('sshKeyFingerprint',data.fingerprint);hide('sshKeyPanel',false);
-    }catch(e){toast(message(e));}
+    try { state.sshKey=null;hide('sshKeyPanel',true);$('sshPin').value='';$('sshConsent').checked=false;sshStatus('Получаем SSH-ключ без отправки пароля…');
+      const data=await job(()=>window.goSSHKeyStart(),'Получаем SSH host key без пароля…'); if(!data){sshStatus('Получение ключа не выполнено.');return;}state.sshKey=data;set('sshKeyAlgorithm',data.algorithm);set('sshKeyFingerprint',data.fingerprint);hide('sshKeyPanel',false);sshStatus('Ключ получен. Сверьте его независимо и заполните SSH-логин и пароль.');
+    }catch(e){sshStatus(message(e),'error');toast(message(e));}
   });
   function sshOptions() {
     const pin=$('sshPin').value.trim();
@@ -285,8 +288,8 @@
     return {user:$('sshUser').value.trim(),password:$('sshPassword').value,fingerprint:pin,kind:$('sshKind').value,consent:true};
   }
   $('sshRead').addEventListener('click',async()=>{
-    let request;try {request=sshOptions();const pending=job(()=>window.goSSHReadStart(request),'Читаем RAID по SSH…');$('sshPassword').value='';const data=await pending;if(data){renderRaid(data);await loadHistory();toast('Снимок RAID получен');}}
-    catch(e){toast(message(e));}finally{$('sshPassword').value='';if(request)request.password='';}
+    let request;try {request=sshOptions();sshStatus('Проверяем SSH-ключ и читаем RAID…');const pending=job(()=>window.goSSHReadStart(request),'Читаем RAID по SSH…');$('sshPassword').value='';const data=await pending;if(data){renderRaid(data);await loadHistory();sshStatus('Снимок RAID получен. Состояние и предупреждения показаны ниже.','success');toast('Снимок RAID получен');}else{sshStatus('Чтение RAID не выполнено.');}}
+    catch(e){sshStatus(message(e),'error');toast(message(e));}finally{$('sshPassword').value='';if(request)request.password='';}
   });
   function severityLabel(value){return ({critical:'КРИТИЧНО',warning:'ВНИМАНИЕ',unknown:'НЕПОЛНЫЕ ДАННЫЕ',ok:'НАЙДЕНО',info:'ИНФОРМАЦИЯ'})[value]||'НЕИЗВЕСТНО';}
   function renderRaid(r){

@@ -54,24 +54,38 @@ func (i *ICoreWebViewSettings) DisableAutofill() error {
 	guid := NewGUID("cb56846c-4168-4d53-b04f-03b6d6796ff2")
 	var settings4 *ICoreWebViewSettings
 	hr, _, _ := i.vtbl.QueryInterface.Call(uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(guid)), uintptr(unsafe.Pointer(&settings4)))
-	if int32(hr) != 0 || settings4 == nil {
-		return fmt.Errorf("WebView2 Settings4 unavailable (HRESULT %x)", hr)
+	if err := checkHRESULT("QueryInterface Settings4", hr); err != nil {
+		return err
+	}
+	if settings4 == nil {
+		return fmt.Errorf("QueryInterface Settings4: empty COM result")
 	}
 	defer settings4.vtbl.Release.Call(uintptr(unsafe.Pointer(settings4)))
-	if hr, _, _ = settings4.vtbl.PutIsPasswordAutosaveEnabled.Call(uintptr(unsafe.Pointer(settings4)), 0); int32(hr) != 0 {
-		return fmt.Errorf("disable password autosave failed (HRESULT %x)", hr)
+	if hr, _, _ = settings4.vtbl.PutIsPasswordAutosaveEnabled.Call(uintptr(unsafe.Pointer(settings4)), 0); hresultFailed(hr) {
+		return checkHRESULT("put_IsPasswordAutosaveEnabled", hr)
 	}
-	if hr, _, _ = settings4.vtbl.PutIsGeneralAutofillEnabled.Call(uintptr(unsafe.Pointer(settings4)), 0); int32(hr) != 0 {
-		return fmt.Errorf("disable general autofill failed (HRESULT %x)", hr)
+	if hr, _, _ = settings4.vtbl.PutIsGeneralAutofillEnabled.Call(uintptr(unsafe.Pointer(settings4)), 0); hresultFailed(hr) {
+		return checkHRESULT("put_IsGeneralAutofillEnabled", hr)
 	}
 	var enabled int32
-	if hr, _, _ = settings4.vtbl.GetIsPasswordAutosaveEnabled.Call(uintptr(unsafe.Pointer(settings4)), uintptr(unsafe.Pointer(&enabled))); int32(hr) != 0 || enabled != 0 {
-		return fmt.Errorf("password autosave is not disabled (HRESULT %x)", hr)
+	if hr, _, _ = settings4.vtbl.GetIsPasswordAutosaveEnabled.Call(uintptr(unsafe.Pointer(settings4)), uintptr(unsafe.Pointer(&enabled))); hresultFailed(hr) {
+		return checkHRESULT("get_IsPasswordAutosaveEnabled", hr)
 	}
-	if hr, _, _ = settings4.vtbl.GetIsGeneralAutofillEnabled.Call(uintptr(unsafe.Pointer(settings4)), uintptr(unsafe.Pointer(&enabled))); int32(hr) != 0 || enabled != 0 {
-		return fmt.Errorf("general autofill is not disabled (HRESULT %x)", hr)
+	if enabled != 0 {
+		return fmt.Errorf("password autosave is still enabled")
+	}
+	if hr, _, _ = settings4.vtbl.GetIsGeneralAutofillEnabled.Call(uintptr(unsafe.Pointer(settings4)), uintptr(unsafe.Pointer(&enabled))); hresultFailed(hr) {
+		return checkHRESULT("get_IsGeneralAutofillEnabled", hr)
+	}
+	if enabled != 0 {
+		return fmt.Errorf("general autofill is still enabled")
 	}
 	return nil
+}
+
+// Release balances the reference returned by get_Settings.
+func (i *ICoreWebViewSettings) Release() {
+	i.vtbl.Release.Call(uintptr(unsafe.Pointer(i)))
 }
 
 func (i *ICoreWebViewSettings) AddRef() uintptr {
@@ -197,15 +211,11 @@ func (i *ICoreWebViewSettings) GetAreDevToolsEnabled() (bool, error) {
 }
 
 func (i *ICoreWebViewSettings) PutAreDevToolsEnabled(areDevToolsEnabled bool) error {
-	var err error
-	_, _, err = i.vtbl.PutAreDevToolsEnabled.Call(
+	hr, _, _ := i.vtbl.PutAreDevToolsEnabled.Call(
 		uintptr(unsafe.Pointer(i)),
 		uintptr(boolToInt(areDevToolsEnabled)),
 	)
-	if err != windows.ERROR_SUCCESS {
-		return err
-	}
-	return nil
+	return checkHRESULT("put_AreDevToolsEnabled", hr)
 }
 
 func (i *ICoreWebViewSettings) GetAreDefaultContextMenusEnabled() (bool, error) {
@@ -222,15 +232,11 @@ func (i *ICoreWebViewSettings) GetAreDefaultContextMenusEnabled() (bool, error) 
 }
 
 func (i *ICoreWebViewSettings) PutAreDefaultContextMenusEnabled(enabled bool) error {
-	var err error
-	_, _, err = i.vtbl.PutAreDefaultContextMenusEnabled.Call(
+	hr, _, _ := i.vtbl.PutAreDefaultContextMenusEnabled.Call(
 		uintptr(unsafe.Pointer(i)),
 		uintptr(boolToInt(enabled)),
 	)
-	if err != windows.ERROR_SUCCESS {
-		return err
-	}
-	return nil
+	return checkHRESULT("put_AreDefaultContextMenusEnabled", hr)
 }
 
 func (i *ICoreWebViewSettings) GetAreHostObjectsAllowed() (bool, error) {
