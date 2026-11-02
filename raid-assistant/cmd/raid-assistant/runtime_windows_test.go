@@ -110,7 +110,7 @@ func TestNativeProgressAndEmbeddedIcon(t *testing.T) {
 	}
 	want := errors.New("work result")
 	err := runtimeProgress("download", func() error {
-		name, _ := syscall.UTF16PtrFromString("ESXi RAID Assistant — WebView2")
+		name, _ := syscall.UTF16PtrFromString("ESXi RAID Assistant")
 		hwnd, _, _ := user32.NewProc("FindWindowW").Call(0, uintptr(unsafe.Pointer(name)))
 		visible, _, _ := user32.NewProc("IsWindowVisible").Call(hwnd)
 		if hwnd == 0 || visible == 0 {
@@ -129,7 +129,7 @@ func TestProgressCompletionAfterWindowClosed(t *testing.T) {
 		runtime.LockOSThread()
 		want := errors.New("worker finished")
 		err := runtimeProgress("download", func() error {
-			name, _ := syscall.UTF16PtrFromString("ESXi RAID Assistant — WebView2")
+			name, _ := syscall.UTF16PtrFromString("ESXi RAID Assistant")
 			hwnd, _, _ := user32.NewProc("FindWindowW").Call(0, uintptr(unsafe.Pointer(name)))
 			if hwnd == 0 {
 				return errors.New("progress window missing")
